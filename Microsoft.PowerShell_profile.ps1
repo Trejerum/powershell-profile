@@ -91,216 +91,7 @@ function gsp {
 }
 
 # ==============================================================================
-# 4. INTEGRACIÓN CON GEMINI API
-# ==============================================================================
-
-function ask-gemini {
-    [CmdletBinding()]
-    param(
-        [Parameter(Position = 0, Mandatory = $false)]
-        [string]$Prompt = "Analiza el siguiente contenido:",
-
-        [Parameter(ValueFromPipeline = $true)]
-        [string]$PipeInput,
-
-        [Parameter(Mandatory = $false)]
-        [string]$File
-    )
-
-    begin {
-        $pipeData = @()
-    }
-    process {
-        if ($PipeInput) { $pipeData += $PipeInput }
-    }
-    end {
-        $apiKey = $env:GEMINI_API_KEY
-        if ([string]::IsNullOrWhiteSpace($apiKey)) {
-            Write-Error "Variable de entorno GEMINI_API_KEY no encontrada."
-            return
-        }
-
-        # 1. Leer archivo si se pasó -File
-        $fileContent = ""
-        if ($File) {
-            if (Test-Path $File) {
-                $fileContent = Get-Content $File -Raw
-            } else {
-                Write-Error "El archivo especificado no existe: $File"
-                return
-            }
-        }
-
-        # 2. Ensamblar prompt completo
-        $pipedText = $pipeData -join "`n"
-        $fullPrompt = @($Prompt, $fileContent, $pipedText) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-        $finalPayload = $fullPrompt -join "`n`n"
-
-        $uri = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
-        $body = @{
-            contents = @(
-                @{ parts = @(@{ text = $finalPayload }) }
-            )
-        } | ConvertTo-Json -Depth 5
-
-        try {
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
-            $res = Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json; charset=utf-8" -Body $bytes
-            return $res.candidates[0].content.parts[0].text
-        }
-        catch {
-            Write-Error "Error en llamada a Gemini API: $_"
-            if ($_.Exception.Response) {
-                $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-                Write-Host "Detalle del error: $($reader.ReadToEnd())" -ForegroundColor Red
-            }
-        }
-    }
-}
-
-# Alias principales (definidos aquí para usarse en las funciones inferiores)
-Set-Alias gemini ask-gemini
-Set-Alias gem    ask-gemini
-
-# ==============================================================================
-# 5. ASISTENTES DE GIT POTENCIADOS POR IA
-# ==============================================================================
-
-function gcm-ai {
-    $diff = git diff --staged
-    if (-not $diff) {
-        Write-Warning "No hay nada en staged. Ejecuta primero: ga"
-        return
-    }
-
-    Write-Host "Consultando a Gemini..." -ForegroundColor DarkGray
-    $rawMsg = $diff | gemini "Genera un único mensaje de commit conciso en español siguiendo Conventional Commits (ej. feat:, fix:, refactor:). No uses markdown, ni comillas, ni texto introductorio, solo el mensaje en una sola línea:"
-
-    $trimChars = [char[]]@('"', "'", '`', [char]0x201C, [char]0x201D, [char]0x2018, [char]0x2019)
-    $msg = $rawMsg.Trim().Trim($trimChars)
-
-    Write-Host "`nPropuesta de commit:" -ForegroundColor Cyan
-    Write-Host "  $msg`n" -ForegroundColor Green
-
-    $choice = Read-Host "[Enter] Aceptar | [e] Editar mensaje | [c] Cancelar"
-
-    switch ($choice.ToLower()) {
-        "e" {
-            $customMsg = Read-Host "Nuevo mensaje"
-            if (-not [string]::IsNullOrWhiteSpace($customMsg)) {
-                git commit -m "$customMsg"
-            } else {
-                Write-Warning "Commit cancelado (mensaje vacío)."
-            }
-        }
-        "c" {
-            Write-Warning "Commit cancelado."
-        }
-        default {
-            git commit -m "$msg"
-        }
-    }
-}
-
-function git-ai {
-    param(
-        [Parameter(Mandatory = $true, Position = 0, ValueFromRemainingArguments = $true)]
-        [string[]]$Query
-    )
-
-    $question = $Query -join " "
-    Write-Host "Consultando comando Git a Gemini..." -ForegroundColor DarkGray
-
-    $prompt = @"
-Actúa como un experto en terminal Git. El usuario necesita un comando para: "$question".
-Responde ÚNICAMENTE con el comando de Git listo para ejecutar, en una sola línea.
-NO incluyas bloques markdown (ni triple backtick), ni explicaciones, ni comentarios.
-Solo el comando crudo.
-"@
-
-    $rawCmd = gemini $prompt
-    $trimChars = [char[]]@('"', "'", '`', [char]0x201C, [char]0x201D, [char]0x2018, [char]0x2019)
-    $cmd = $rawCmd.Trim().Trim($trimChars)
-
-    Write-Host "`nComando sugerido:" -ForegroundColor Cyan
-    Write-Host "  $cmd`n" -ForegroundColor Green
-
-    $choice = Read-Host "[Enter] Ejecutar | [e] Editar | [c] Cancelar"
-
-    switch ($choice.ToLower()) {
-        "e" {
-            Add-Type -AssemblyName System.Windows.Forms
-            [System.Windows.Forms.SendKeys]::SendWait($cmd)
-            $customCmd = Read-Host "Modificar comando"
-            if (-not [string]::IsNullOrWhiteSpace($customCmd)) {
-                Write-Host "Ejecutando: $customCmd" -ForegroundColor DarkGray
-                Invoke-Expression $customCmd
-            } else {
-                Write-Warning "Operación cancelada."
-            }
-        }
-        "c" {
-            Write-Warning "Operación cancelada."
-        }
-        default {
-            Write-Host "Ejecutando..." -ForegroundColor DarkGray
-            Invoke-Expression $cmd
-        }
-    }
-}
-
-function gcheck {
-    param(
-        [switch]$Staged,
-        [string]$Branch = "main"
-    )
-
-    $diff = ""
-    if ($Staged) {
-        Write-Host "Analizando cambios en STAGED..." -ForegroundColor DarkGray
-        $diff = git diff --staged
-    } else {
-        $diff = git diff HEAD
-        if ([string]::IsNullOrWhiteSpace($diff)) {
-            Write-Host "Directorio limpio. Comparando rama actual contra '$Branch'..." -ForegroundColor DarkGray
-            $diff = git diff $Branch...HEAD
-        } else {
-            Write-Host "Analizando cambios locales pendientes (staged + unstaged)..." -ForegroundColor DarkGray
-        }
-    }
-
-    if ([string]::IsNullOrWhiteSpace($diff)) {
-        Write-Warning "No se detectaron diferencias para analizar."
-        return
-    }
-
-    $prompt = @"
-Actúa como un Principal Software Engineer y experto en QA.
-Analiza este diff de Git con atención a RIESGOS DE REGRESIÓN, bugs latentes y deuda técnica.
-
-Evalúa concretamente:
-1. **Riesgos de Regresión / Breaking Changes**: Cambios en firmas de funciones, contratos de API, payloads, queries o tipos que puedan romper código dependiente.
-2. **Casos Límite no Cubiertos**: Manejo de nulos/undefined, errores no capturados, condiciones de carrera o validaciones faltantes.
-3. **Seguridad y Rendimiento**: Consultas pesadas, leaks de memoria, secretos o dependencias sospechosas.
-4. **Impacto en Pruebas**: Qué tests existentes podrían romperse o qué nuevos casos se deberían probar sí o sí.
-
-Formato de respuesta:
-- Si el código se ve sólido y sin riesgos evidentes, dilo brevemente (1 o 2 líneas).
-- Si hay riesgos, sé directo, conciso y enuméralos priorizando por severidad (Alta/Media/Baja), indicando el archivo y la línea afectada.
-- Responde en español directo, sin rodeos teóricos.
-
-Diff a revisar:
-$diff
-"@
-
-    Write-Host "Consultando a Gemini para análisis de impacto y regresión...`n" -ForegroundColor Cyan
-    gemini $prompt
-}
-
-Set-Alias gai git-ai
-
-# ==============================================================================
-# 6. AYUDA RÁPIDA DEL PERFIL
+# 4. AYUDA RÁPIDA DEL PERFIL
 # ==============================================================================
 
 function Show-ProfileHelp {
@@ -331,53 +122,47 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gss";   Descripcion = "Stash con timestamp y rama (incluye untracked)" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gsl";   Descripcion = "Listar stashes coloreados" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gsp";   Descripcion = "Aplicar stash (ej. 'gsp' o 'gsp 2')" }
-
-        # IA / Gemini
-        [PSCustomObject]@{ Categoria = "Gemini/IA";  Comando = "gemini";   Descripcion = "Pregunta a Gemini vía pipeline, texto o -File" }
-        [PSCustomObject]@{ Categoria = "Gemini/IA";  Comando = "gcm-ai";   Descripcion = "Genera commit con Conventional Commits del staged" }
-        [PSCustomObject]@{ Categoria = "Gemini/IA";  Comando = "gai";      Descripcion = "Pregunta un comando de Git en lenguaje natural" }
-        [PSCustomObject]@{ Categoria = "Gemini/IA";  Comando = "gcheck";   Descripcion = "Revisa diff buscando riesgos de regresión y bugs" }
-
-        # SQL Server Toolkit
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q";          Descripcion = "Ejecuta SQL/.sql (switches: -Grid, -Clip, -Csv, -Json, -DryRun)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect";   Descripcion = "Conecta sesión persistente en BD (ej. qconnect [Serv] [BD])" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc";      Descripcion = "Desconecta sesión persistente (alias de qdisconnect)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "use";        Descripcion = "Cambia BD activa y refresca caché (ej. use <BD>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "desc";       Descripcion = "Describe columnas y tipos de una tabla (ej. desc <tabla>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-table"; Descripcion = "Busca tablas/vistas por patrón (ej. find-table <patrón>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "count";      Descripcion = "Recuento ultrarrápido sin scan (sys.dm_db_partition_stats)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who";        Descripcion = "Monitor de sesiones activas y bloqueos (sys.dm_exec_requests)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see";        Descripcion = "Inspecciona DDL/código de vista/SP/función (ej. see <objeto> [-Clip])" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
-    )
-
-    if ($Filter) {
-        $commands = $commands | Where-Object {
-            $_.Comando -like "*$Filter*" -or $_.Descripcion -like "*$Filter*" -or $_.Categoria -like "*$Filter*"
-        }
-    }
-
-    Write-Host "`n=== Comandos del `$PROFILE ===`n" -ForegroundColor DarkCyan
-
-    $groups = $commands | Group-Object Categoria
-    foreach ($group in $groups) {
-        Write-Host " [$($group.Name)]" -ForegroundColor Yellow
-        foreach ($item in $group.Group) {
-            $cmd = $item.Comando.PadRight(12)
-            Write-Host "   $cmd" -NoNewline -ForegroundColor Green
-            Write-Host " -> " -NoNewline -ForegroundColor DarkGray
-            Write-Host $item.Descripcion -ForegroundColor White
-        }
-        Write-Host ""
-    }
-}
-
-Set-Alias phelp Show-ProfileHelp
-Set-Alias '?p'  Show-ProfileHelp
-
-# ==============================================================================
-# 7. SQL SERVER TOOLKIT (ADO.NET + PowerShell)
-# ==============================================================================
+ 
+         # SQL Server Toolkit
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q";          Descripcion = "Ejecuta SQL/.sql (switches: -Grid, -Clip, -Csv, -Json, -DryRun)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect";   Descripcion = "Conecta sesión persistente en BD (ej. qconnect [Serv] [BD])" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc";      Descripcion = "Desconecta sesión persistente (alias de qdisconnect)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "use";        Descripcion = "Cambia BD activa y refresca caché (ej. use <BD>)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "desc";       Descripcion = "Describe columnas y tipos de una tabla (ej. desc <tabla>)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-table"; Descripcion = "Busca tablas/vistas por patrón (ej. find-table <patrón>)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "count";      Descripcion = "Recuento ultrarrápido sin scan (sys.dm_db_partition_stats)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who";        Descripcion = "Monitor de sesiones activas y bloqueos (sys.dm_exec_requests)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see";        Descripcion = "Inspecciona DDL/código de vista/SP/función (ej. see <objeto> [-Clip])" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
+     )
+ 
+     if ($Filter) {
+         $commands = $commands | Where-Object {
+             $_.Comando -like "*$Filter*" -or $_.Descripcion -like "*$Filter*" -or $_.Categoria -like "*$Filter*"
+         }
+     }
+ 
+     Write-Host "`n=== Comandos del `$PROFILE ===`n" -ForegroundColor DarkCyan
+ 
+     $groups = $commands | Group-Object Categoria
+     foreach ($group in $groups) {
+         Write-Host " [$($group.Name)]" -ForegroundColor Yellow
+         foreach ($item in $group.Group) {
+             $cmd = $item.Comando.PadRight(12)
+             Write-Host "   $cmd" -NoNewline -ForegroundColor Green
+             Write-Host " -> " -NoNewline -ForegroundColor DarkGray
+             Write-Host $item.Descripcion -ForegroundColor White
+         }
+         Write-Host ""
+     }
+ }
+ 
+ Set-Alias phelp Show-ProfileHelp
+ Set-Alias '?p'  Show-ProfileHelp
+ 
+ # ==============================================================================
+ # 5. SQL SERVER TOOLKIT (ADO.NET + PowerShell)
+ # ==============================================================================
 
 # Variables de entorno y defaults de conexión
 $global:SqlDefaultServer   = 'PORT1220\SQL_SERVER'
@@ -1241,7 +1026,7 @@ function qlog {
 }
 
 # ==============================================================================
-# 8. AUTOCOMPLETADO SQL (PSReadLine KeyHandler: Ctrl+Space)
+# 6. AUTOCOMPLETADO SQL (PSReadLine KeyHandler: Ctrl+Space)
 # ==============================================================================
 
 if (Get-Module -ListAvailable -Name PSReadLine) {
@@ -1307,7 +1092,7 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
 }
 
 # ==============================================================================
-# 9. PROMPT PERSONALIZADO (Estado de SQL Server)
+# 7. PROMPT PERSONALIZADO (Estado de SQL Server)
 # ==============================================================================
 
 function prompt {
