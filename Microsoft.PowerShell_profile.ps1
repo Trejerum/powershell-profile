@@ -342,10 +342,13 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q";          Descripcion = "Ejecuta SQL/.sql (switches: -Grid, -Clip, -Csv, -Json, -DryRun)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect";   Descripcion = "Conecta sesión persistente en BD (ej. qconnect [Serv] [BD])" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc";      Descripcion = "Desconecta sesión persistente (alias de qdisconnect)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "use";        Descripcion = "Cambia BD activa y refresca caché (ej. use <BD>)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "desc";       Descripcion = "Describe columnas y tipos de una tabla (ej. desc <tabla>)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-table"; Descripcion = "Busca tablas/vistas por patrón (ej. find-table <patrón>)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "count";      Descripcion = "Recuento ultrarrápido sin scan (sys.dm_db_partition_stats)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who";        Descripcion = "Monitor de sesiones activas y bloqueos (sys.dm_exec_requests)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see";        Descripcion = "Inspecciona DDL/código de vista/SP/función (ej. see <objeto> [-Clip])" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
     )
 
     if ($Filter) {
@@ -492,6 +495,85 @@ function qconnect {
     }
 }
 
+function use {
+    <#
+    .SYNOPSIS
+        Cambia rápidamente de base de datos activa y actualiza la caché de tablas.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Database
+    )
+
+    $cleanDb = $Database.Trim().Trim('"', "'").Trim('[]')
+
+    if ($global:SqlSession -and $global:SqlSession.State -eq 'Open') {
+        try {
+            $cmd = $global:SqlSession.CreateCommand()
+            $cmd.CommandText = "USE [$cleanDb]"
+            [void]$cmd.ExecuteNonQuery()
+            $global:SqlDefaultDatabase = $cleanDb
+            Update-SqlTableCache
+            Write-Host "● Contexto cambiado a [$cleanDb]" -ForegroundColor Green
+        }
+        catch {
+            Write-Error "No se pudo cambiar a la base de datos [$cleanDb]: $_"
+        }
+    }
+    else {
+        $global:SqlDefaultDatabase = $cleanDb
+        Write-Host "● Contexto cambiado a [$cleanDb]" -ForegroundColor Green
+    }
+}
+
+Register-ArgumentCompleter -CommandName use -ParameterName Database -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+
+    $dbs = @()
+    try {
+        $conn = $null
+        $needClose = $false
+        if ($global:SqlSession -and $global:SqlSession.State -eq 'Open') {
+            $conn = $global:SqlSession
+        }
+        else {
+            $cs = "Server=$global:SqlDefaultServer;Database=master;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=3;"
+            $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
+            $conn.Open()
+            $needClose = $true
+        }
+
+        $cmd = $conn.CreateCommand()
+        $cmd.CommandText = "SELECT name FROM sys.databases WHERE state = 0 ORDER BY name"
+        $cmd.CommandTimeout = 5
+        $da = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+        $dt = New-Object System.Data.DataTable
+        [void]$da.Fill($dt)
+
+        foreach ($r in $dt.Rows) {
+            $dbs += $r['name']
+        }
+
+        if ($needClose -and $conn) {
+            $conn.Close()
+            $conn.Dispose()
+        }
+    }
+    catch { }
+
+    $cleanWord = $wordToComplete.TrimStart('"', "'", '[')
+    $dbs | Where-Object { $_ -like "$cleanWord*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new(
+            $_,
+            $_,
+            'ParameterValue',
+            "Base de datos: $_"
+        )
+    }
+}
+
 function q {
     <#
     .SYNOPSIS
@@ -516,6 +598,8 @@ function q {
     )
 
     process {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
         # 1. Detección automática: archivo en disco vs sentencia SQL en texto plano
         $isFilePath = $false
         $resolvedPath = $null
@@ -613,6 +697,23 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                     [void]$cmd.ExecuteNonQuery()
                 }
             }
+
+            # 3.1 Historial persistente en segundo plano ($HOME\.sql_history.tsv)
+            $sw.Stop()
+            $durationMs = $sw.ElapsedMilliseconds
+            try {
+                $serverLogged = if ($conn -and $conn.DataSource) { $conn.DataSource } else { $global:SqlDefaultServer }
+                $dbLogged     = if ($conn -and $conn.Database)   { $conn.Database }   else { $global:SqlDefaultDatabase }
+                $sanitizedSql = ($sqlContent -replace "[\r\n\t]+", " ").Trim()
+                if ($sanitizedSql.Length -gt 3000) {
+                    $sanitizedSql = $sanitizedSql.Substring(0, 3000) + " ... [TRUNCATED]"
+                }
+                $historyFile = Join-Path $HOME ".sql_history.tsv"
+                $timestamp   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                $logLine     = "$timestamp`t$serverLogged`t$dbLogged`t$durationMs`t$sanitizedSql"
+                [System.IO.File]::AppendAllLines($historyFile, [string[]]@($logLine), [System.Text.Encoding]::UTF8)
+            }
+            catch { }
 
             # 4. Exportación y renderizado de resultados
             if ($Rollback) {
@@ -981,6 +1082,162 @@ ORDER BY r.cpu_time DESC
     }
 
     $res
+}
+
+function see {
+    <#
+    .SYNOPSIS
+        Inspecciona el código fuente (DDL) de vistas, procedimientos almacenados, funciones y triggers.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ObjectName,
+
+        [switch]$Clip
+    )
+
+    $clean = $ObjectName.Trim().Trim('"', "'")
+    $query = @"
+SELECT OBJECT_DEFINITION(OBJECT_ID('$clean')) AS [Definition]
+"@
+
+    $res = q $query -All
+    $code = $null
+
+    if ($res -is [System.Data.DataTable] -and $res.Rows.Count -gt 0) {
+        $val = $res.Rows[0]['Definition']
+        if ($val -ne [System.DBNull]::Value) { $code = [string]$val }
+    }
+    elseif ($res -is [System.Array] -and $res.Count -gt 0) {
+        $val = $res[0].Definition
+        if ($val) { $code = [string]$val }
+    }
+    elseif ($res -and $res.PSObject.Properties['Definition']) {
+        $val = $res.Definition
+        if ($val) { $code = [string]$val }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($code)) {
+        Write-Host "No se encontró definición para [$ObjectName]" -ForegroundColor Yellow
+        return
+    }
+
+    if ($Clip) {
+        try {
+            Set-Clipboard -Value $code -ErrorAction Stop
+        }
+        catch {
+            Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+            [System.Windows.Forms.Clipboard]::SetText($code)
+        }
+        Write-Host "✓ Definición de [$ObjectName] copiada al portapapeles" -ForegroundColor Cyan
+        return
+    }
+
+    $code
+}
+
+Register-ArgumentCompleter -CommandName see -ParameterName ObjectName -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+
+    if ($null -eq $global:SqlTableCache -or $global:SqlTableCache.Count -eq 0) {
+        Update-SqlTableCache
+    }
+
+    $cleanWord = $wordToComplete.TrimStart('"', "'", '[')
+    $global:SqlTableCache | Where-Object { $_ -like "$cleanWord*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new(
+            $_,
+            $_,
+            'ParameterValue',
+            "Objeto SQL: $_"
+        )
+    }
+}
+
+function qlog {
+    <#
+    .SYNOPSIS
+        Consulta el historial persistente de sentencias SQL ejecutadas ($HOME\.sql_history.tsv).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Filter,
+
+        [Parameter(Position = 1)]
+        [int]$Last = 20,
+
+        [switch]$All,
+        [switch]$Clip
+    )
+
+    $historyPath = Join-Path $HOME ".sql_history.tsv"
+    if (-not (Test-Path -LiteralPath $historyPath)) {
+        Write-Host "● El historial de consultas está vacío ($historyPath)." -ForegroundColor DarkGray
+        return
+    }
+
+    try {
+        $lines = [System.IO.File]::ReadAllLines($historyPath, [System.Text.Encoding]::UTF8)
+    }
+    catch {
+        Write-Warning "No se pudo leer el archivo de historial: $_"
+        return
+    }
+
+    if ($null -eq $lines -or $lines.Count -eq 0) {
+        Write-Host "● El historial de consultas está vacío." -ForegroundColor DarkGray
+        return
+    }
+
+    $records = foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $parts = $line.Split("`t")
+        if ($parts.Count -lt 5) { continue }
+
+        $recDate   = $parts[0]
+        $recServer = $parts[1]
+        $recDb     = $parts[2]
+        $recMs     = $parts[3]
+        $recSql    = $parts[4..($parts.Count - 1)] -join "`t"
+
+        if ($Filter -and ($recSql -notlike "*$Filter*" -and $recDb -notlike "*$Filter*" -and $recServer -notlike "*$Filter*")) {
+            continue
+        }
+
+        [PSCustomObject]@{
+            Fecha       = $recDate
+            BaseDatos   = $recDb
+            'Duración'  = "${recMs} ms"
+            Query       = if ($recSql.Length -gt 70) { $recSql.Substring(0, 67) + "..." } else { $recSql }
+            QueryFull   = $recSql
+        }
+    }
+
+    if ($null -eq $records -or $records.Count -eq 0) {
+        Write-Host "● No se encontraron consultas que coincidan con '$Filter'." -ForegroundColor DarkGray
+        return
+    }
+
+    $out = if ($All) { @($records) } else { @($records | Select-Object -Last $Last) }
+
+    if ($Clip) {
+        $clipText = ($out | ForEach-Object { $_.QueryFull }) -join "`n`n"
+        try {
+            Set-Clipboard -Value $clipText -ErrorAction Stop
+        }
+        catch {
+            Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+            [System.Windows.Forms.Clipboard]::SetText($clipText)
+        }
+        Write-Host "✓ Consultas copiadas al portapapeles." -ForegroundColor Cyan
+        return
+    }
+
+    $out | Format-Table -Property Fecha, BaseDatos, 'Duración', Query -AutoSize
 }
 
 # ==============================================================================
