@@ -58,6 +58,31 @@ function gs    { git status -sb $args }
 function gp    { git pull $args }
 function gf    { git fetch $args }
 function gpush { git push $args }
+# Push de la rama actual configurando upstream (por defecto 'origin')
+function gpsup {
+    $branch = (git branch --show-current 2>$null)
+    if ([string]::IsNullOrWhiteSpace($branch)) {
+        Write-Error "No estás en una rama de Git válida o no se pudo obtener la rama actual."
+        return
+    }
+    $branch = $branch.Trim()
+
+    $remote = "origin"
+    $extraArgs = @()
+
+    if ($args.Count -gt 0 -and -not ($args[0].StartsWith('-'))) {
+        $remote = $args[0]
+        if ($args.Count -gt 1) {
+            $extraArgs = $args[1..($args.Count - 1)]
+        }
+    } else {
+        $extraArgs = $args
+    }
+
+    git push --set-upstream $remote $branch @extraArgs
+}
+Set-Alias -Name gpu -Value gpsup -ErrorAction SilentlyContinue
+Set-Alias -Name gpushu -Value gpsup -ErrorAction SilentlyContinue
 function gco   { git checkout $args }
 function ga    { git add . $args }
 function glog  { git log --oneline --graph --decorate -n 10 $args }
@@ -116,6 +141,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Git";        Comando = "ga";    Descripcion = "git add ." }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gp/gf"; Descripcion = "git pull / git fetch" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gpush"; Descripcion = "git push" }
+        [PSCustomObject]@{ Categoria = "Git";        Comando = "gpsup"; Descripcion = "git push --set-upstream origin <rama> (alias: gpu, gpushu)" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gco";   Descripcion = "git checkout <rama/archivo>" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "glog";  Descripcion = "Historial gráfico compacto (últimos 10)" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gme";   Descripcion = "Commits remotos de Diego Corral" }
@@ -124,7 +150,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gsp";   Descripcion = "Aplicar stash (ej. 'gsp' o 'gsp 2')" }
  
          # SQL Server Toolkit
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q";          Descripcion = "Ejecuta SQL/.sql (switches: -Grid, -Clip, -Csv, -Json, -DryRun)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q";          Descripcion = "Ejecuta SQL/.sql (switches: -Grid, -Clip, -Csv, -Json, -DryRun, -Timeout N)" }
          [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect";   Descripcion = "Conecta sesión persistente en BD (ej. qconnect [Serv] [BD])" }
          [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc";      Descripcion = "Desconecta sesión persistente (alias de qdisconnect)" }
          [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "use";        Descripcion = "Cambia BD activa y refresca caché (ej. use <BD>)" }
@@ -133,6 +159,10 @@ function Show-ProfileHelp {
          [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "count";      Descripcion = "Recuento ultrarrápido sin scan (sys.dm_db_partition_stats)" }
          [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who";        Descripcion = "Monitor de sesiones activas y bloqueos (sys.dm_exec_requests)" }
          [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see";        Descripcion = "Inspecciona DDL/código de vista/SP/función (ej. see <objeto> [-Clip])" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see-idx";    Descripcion = "Inspecciona índices y columnas clave (ej. see-idx <tabla>)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-col";   Descripcion = "Busca en qué tablas existe una columna (ej. find-col <col>)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "open-sql";   Descripcion = "Abre DDL de SP/vista directamente en Neovim (ej. open-sql <obj>)" }
+         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qfmt";       Descripcion = "Formatea consulta SQL con indentaciones (ej. qfmt <query> [-Clip])" }
          [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
      )
  
@@ -206,27 +236,47 @@ function Update-SqlTableCache {
 
     try {
         $cmd = $conn.CreateCommand()
-        $cmd.CommandText = "SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS FullName, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE IN ('BASE TABLE', 'VIEW')"
+        $cmd.CommandText = @"
+SELECT 
+    TABLE_SCHEMA + '.' + TABLE_NAME AS FullName,
+    TABLE_NAME
+FROM INFORMATION_SCHEMA.TABLES 
+WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+  AND TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+ORDER BY TABLE_SCHEMA, TABLE_NAME
+"@
         $cmd.CommandTimeout = 15
 
         $da = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
         $dt = New-Object System.Data.DataTable
         [void]$da.Fill($dt)
 
-        $items = @()
-        foreach ($row in $dt.Rows) {
-            $items += $row['FullName']
-            $items += $row['TABLE_NAME']
+        $list = New-Object System.Collections.Generic.List[string]($dt.Rows.Count * 2)
+        if ($dt.Rows.Count -gt 5000) {
+            foreach ($row in $dt.Rows) {
+                $list.Add($row['FullName'])
+            }
         }
-        $global:SqlTableCache = @($items | Sort-Object -Unique)
+        else {
+            foreach ($row in $dt.Rows) {
+                $list.Add($row['FullName'])
+                $list.Add($row['TABLE_NAME'])
+            }
+        }
+        $global:SqlTableCache = @($list | Sort-Object -Unique)
     }
     catch {
         Write-Warning "Error al consultar INFORMATION_SCHEMA.TABLES: $_"
     }
     finally {
         if ($needClose -and $conn) {
-            $conn.Close()
-            $conn.Dispose()
+            try {
+                if ($conn.State -eq 'Open') { $conn.Close() }
+            }
+            catch { }
+            finally {
+                $conn.Dispose()
+            }
         }
     }
 }
@@ -237,15 +287,24 @@ function qdisconnect {
         Cierra y destruye la conexión persistente activa.
     #>
     [CmdletBinding()]
-    param()
+    param(
+        [switch]$Quiet
+    )
 
     if ($global:SqlSession) {
-        if ($global:SqlSession.State -eq 'Open') {
-            $global:SqlSession.Close()
+        try {
+            if ($global:SqlSession.State -eq 'Open') {
+                $global:SqlSession.Close()
+            }
         }
-        $global:SqlSession.Dispose()
-        $global:SqlSession = $null
-        Write-Host "[INFO] Sesión desconectada. Modo transitorio activado." -ForegroundColor Yellow
+        catch { }
+        finally {
+            $global:SqlSession.Dispose()
+            $global:SqlSession = $null
+        }
+        if (-not $Quiet) {
+            Write-Host "[INFO] Sesión desconectada. Modo transitorio activado." -ForegroundColor Yellow
+        }
     }
 }
 
@@ -265,12 +324,19 @@ function qconnect {
         [string]$Database = $global:SqlDefaultDatabase
     )
 
-    qdisconnect
+    qdisconnect -Quiet
 
-    $cs = "Server=$Server;Database=$Database;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=15;"
+    $cs = "Server=$Server;Database=$Database;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=10;"
     try {
         $global:SqlSession = New-Object System.Data.SqlClient.SqlConnection($cs)
         $global:SqlSession.Open()
+
+        # Prevención de transacciones huérfanas
+        $initCmd = $global:SqlSession.CreateCommand()
+        $initCmd.CommandText = "SET XACT_ABORT ON;"
+        $initCmd.CommandTimeout = 5
+        [void]$initCmd.ExecuteNonQuery()
+
         Write-Host "[OK] Conectado a [$Database] en [$Server]" -ForegroundColor Green
         Update-SqlTableCache
     }
@@ -292,24 +358,24 @@ function use {
         [string]$Database
     )
 
-    $cleanDb = $Database.Trim().Trim('"', "'").Trim('[]')
+    $cleanDb = ($Database.Trim().Trim('"', "'").Trim('[]') -replace '[\0\r\n\t]', '').Replace(']', ']]')
 
     if ($global:SqlSession -and $global:SqlSession.State -eq 'Open') {
         try {
             $cmd = $global:SqlSession.CreateCommand()
             $cmd.CommandText = "USE [$cleanDb]"
             [void]$cmd.ExecuteNonQuery()
-            $global:SqlDefaultDatabase = $cleanDb
+            $global:SqlDefaultDatabase = $cleanDb.Replace(']]', ']')
             Update-SqlTableCache
-            Write-Host "● Contexto cambiado a [$cleanDb]" -ForegroundColor Green
+            Write-Host "● Contexto cambiado a [$($global:SqlDefaultDatabase)]" -ForegroundColor Green
         }
         catch {
             Write-Error "No se pudo cambiar a la base de datos [$cleanDb]: $_"
         }
     }
     else {
-        $global:SqlDefaultDatabase = $cleanDb
-        Write-Host "● Contexto cambiado a [$cleanDb]" -ForegroundColor Green
+        $global:SqlDefaultDatabase = $cleanDb.Replace(']]', ']')
+        Write-Host "● Contexto cambiado a [$($global:SqlDefaultDatabase)]" -ForegroundColor Green
     }
 }
 
@@ -371,6 +437,10 @@ function q {
         [ValidateNotNullOrEmpty()]
         [string]$QueryOrPath,
 
+        [Parameter()]
+        [Alias('Params')]
+        [System.Collections.IDictionary]$Parameters,
+
         [switch]$Grid,          # Abre la ventana gráfica interactiva Out-GridView
         [switch]$Clip,          # Copia el resultado al portapapeles en formato TSV (para Excel)
         [Alias('Csv')]
@@ -379,7 +449,8 @@ function q {
         [Alias('DryRun')]
         [switch]$Rollback,      # Ejecuta dentro de BEGIN TRAN...ROLLBACK TRAN reportando filas afectadas sin persistir
         [switch]$All,           # Ignora el límite de seguridad de filas
-        [int]$MaxRows = 100     # Límite por defecto para no congelar la consola
+        [int]$MaxRows = 100,    # Límite por defecto para no congelar la consola
+        [int]$Timeout = 120     # Tiempo máximo de espera en segundos para la ejecución de la consulta
     )
 
     process {
@@ -444,169 +515,138 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
             }
         }
 
+        # 3. Preparación de conexión y salvaguarda contra sockets zombies
         $isTransient = $false
         $conn = $null
+        $savedServer = $global:SqlDefaultServer
+        $savedDb     = $global:SqlDefaultDatabase
+        $isPersistent = ($global:SqlSession -and $global:SqlSession.State -eq 'Open')
 
-        # 3. Comprobar si existe sesión persistente viva o abrir conexión transitoria
-        if ($global:SqlSession -and $global:SqlSession.State -eq 'Open') {
+        if ($isPersistent) {
             $conn = $global:SqlSession
+            if ($conn.DataSource) { $savedServer = $conn.DataSource }
+            if ($conn.Database)   { $savedDb     = $conn.Database }
         }
         else {
             $isTransient = $true
-            $cs = "Server=$global:SqlDefaultServer;Database=$global:SqlDefaultDatabase;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=15;"
-            $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
-            $conn.Open()
-        }
-
-        try {
-            $cmd = $conn.CreateCommand()
-            $cmd.CommandTimeout = 120
-            $dt = New-Object System.Data.DataTable
-
-            for ($i = 0; $i -lt $batches.Count; $i++) {
-                $batch = $batches[$i]
-                $cmd.CommandText = $batch
-                $isLastBatch = ($i -eq ($batches.Count - 1))
-
-                # Detectar si el lote contiene sentencias SELECT que retornan datos
-                $cleanBatch = $batch -replace '(?ms)/\*.*?\*/', '' -replace '(?m)--.*?$', ''
-                $hasSelect = ($cleanBatch -match '(?i)^\s*(?:WITH\s+[\s\S]+?AS\s*\([\s\S]+?\)\s*)?SELECT\b') -or
-                             ($cleanBatch -match '(?i)\bSELECT\b' -and $cleanBatch -notmatch '(?i)^\s*(?:INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|SET|USE|TRUNCATE|GRANT|REVOKE)\b') -or
-                             ($cleanBatch -match '(?i);\s*SELECT\b')
-
-                if ($isLastBatch -or $hasSelect) {
-                    $da = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
-                    [void]$da.Fill($dt)
-                }
-                else {
-                    [void]$cmd.ExecuteNonQuery()
-                }
-            }
-
-            # 3.1 Historial persistente en segundo plano ($HOME\.sql_history.tsv)
-            $sw.Stop()
-            $durationMs = $sw.ElapsedMilliseconds
+            $cs = "Server=$global:SqlDefaultServer;Database=$global:SqlDefaultDatabase;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=10;"
             try {
-                $serverLogged = if ($conn -and $conn.DataSource) { $conn.DataSource } else { $global:SqlDefaultServer }
-                $dbLogged     = if ($conn -and $conn.Database)   { $conn.Database }   else { $global:SqlDefaultDatabase }
-                $sanitizedSql = ($sqlContent -replace "[\r\n\t]+", " ").Trim()
-                if ($sanitizedSql.Length -gt 3000) {
-                    $sanitizedSql = $sanitizedSql.Substring(0, 3000) + " ... [TRUNCATED]"
-                }
-                $historyFile = Join-Path $HOME ".sql_history.tsv"
-                $timestamp   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-                $logLine     = "$timestamp`t$serverLogged`t$dbLogged`t$durationMs`t$sanitizedSql"
-                [System.IO.File]::AppendAllLines($historyFile, [string[]]@($logLine), [System.Text.Encoding]::UTF8)
+                $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
+                $conn.Open()
+                # Prevención de transacciones huérfanas
+                $initCmd = $conn.CreateCommand()
+                $initCmd.CommandText = "SET XACT_ABORT ON;"
+                $initCmd.CommandTimeout = 5
+                [void]$initCmd.ExecuteNonQuery()
             }
-            catch { }
-
-            # 4. Exportación y renderizado de resultados
-            if ($Rollback) {
-                $affected = 0
-                if ($dt.Rows.Count -gt 0 -and $dt.Columns.Contains('__DryRunRows__')) {
-                    $val = $dt.Rows[0]['__DryRunRows__']
-                    if ($null -ne $val -and -not [System.DBNull]::Value.Equals($val)) {
-                        $affected = [int]$val
-                    }
-                }
-                Write-Host "Modo DryRun: La sentencia afectaría a $affected filas (Cambios revertidos)." -ForegroundColor Yellow
+            catch {
+                Write-Error "No se pudo conectar a SQL Server ($global:SqlDefaultServer): $($_.Exception.Message)"
                 return
             }
+        }
 
-            if ($Json) {
-                if ($dt.Rows.Count -eq 0) {
-                    Write-Warning "La consulta no devolvió filas para convertir a JSON."
-                    return
-                }
+        $dt = New-Object System.Data.DataTable
+        $executedSuccessfully = $false
+        $maxAttempts = if ($isPersistent) { 2 } else { 1 }
 
-                $rows = @(foreach ($row in $dt.Rows) {
-                    $obj = [ordered]@{}
-                    foreach ($col in $dt.Columns) {
-                        $val = $row[$col]
-                        $obj[$col.ColumnName] = if ($null -eq $val -or [System.DBNull]::Value.Equals($val)) { $null } else { $val }
-                    }
-                    [pscustomobject]$obj
-                })
+        try {
+            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                try {
+                    $cmd = $conn.CreateCommand()
+                    $cmd.CommandTimeout = $Timeout
 
-                return ($rows | ConvertTo-Json -Depth 3)
-            }
+                    for ($i = 0; $i -lt $batches.Count; $i++) {
+                        $batch = $batches[$i]
+                        $cmd.CommandText = $batch
+                        $isLastBatch = ($i -eq ($batches.Count - 1))
 
-            if ($Clip) {
-                if ($dt.Columns.Count -eq 0) {
-                    Write-Warning "La consulta no devolvió filas ni columnas para copiar al portapapeles."
-                    return
-                }
+                        # Cargar parámetros SqlParameter si fueron provistos
+                        if ($Parameters -and $Parameters.Count -gt 0) {
+                            $cmd.Parameters.Clear()
+                            foreach ($pKey in $Parameters.Keys) {
+                                $pName = if ($pKey.ToString().StartsWith('@')) { $pKey.ToString() } else { "@$pKey" }
+                                $pVal = $Parameters[$pKey]
+                                if ($null -eq $pVal) { $pVal = [System.DBNull]::Value }
+                                [void]$cmd.Parameters.AddWithValue($pName, $pVal)
+                            }
+                        }
 
-                $colNames = @($dt.Columns | ForEach-Object { $_.ColumnName })
-                $sb = New-Object System.Text.StringBuilder
-                [void]$sb.AppendLine(($colNames -join "`t"))
-                foreach ($row in $dt.Rows) {
-                    $rowVals = foreach ($col in $dt.Columns) {
-                        $v = $row[$col]
-                        if ($null -eq $v -or [System.DBNull]::Value.Equals($v)) {
-                            ""
+                        # Detectar si el lote contiene sentencias SELECT que retornan datos
+                        $cleanBatch = $batch -replace '(?ms)/\*.*?\*/', '' -replace '(?m)--.*?$', ''
+                        $hasSelect = ($cleanBatch -match '(?i)^\s*(?:WITH\s+[\s\S]+?AS\s*\([\s\S]+?\)\s*)?SELECT\b') -or
+                                     ($cleanBatch -match '(?i)\bSELECT\b' -and $cleanBatch -notmatch '(?i)^\s*(?:INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|SET|USE|TRUNCATE|GRANT|REVOKE)\b') -or
+                                     ($cleanBatch -match '(?i);\s*SELECT\b')
+
+                        if ($isLastBatch -or $hasSelect) {
+                            $da = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+                            [void]$da.Fill($dt)
                         }
                         else {
-                            $s = $v.ToString()
-                            if ($s -match "[\t\r\n`"]") {
-                                '"' + $s.Replace('"', '""') + '"'
-                            } else {
-                                $s
+                            [void]$cmd.ExecuteNonQuery()
+                        }
+                    }
+
+                    $executedSuccessfully = $true
+                    break
+                }
+                catch {
+                    $ex = $_.Exception
+
+                    # 1. Rollback preventivo si la conexión sigue abierta y hay transacción activa
+                    if ($conn -and $conn.State -eq 'Open') {
+                        try {
+                            $rbCmd = $conn.CreateCommand()
+                            $rbCmd.CommandText = "IF @@TRANCOUNT > 0 ROLLBACK TRAN;"
+                            $rbCmd.CommandTimeout = 5
+                            [void]$rbCmd.ExecuteNonQuery()
+                        }
+                        catch { }
+                    }
+
+                    # 2. Detección de Socket Zombie / fallo de red/transporte
+                    $isNetError = $false
+                    $fullErr = if ($ex) { $ex.ToString() } else { "" }
+                    if ($fullErr -match '(?i)transport-level|TCP Provider|broken and recovery is not possible|comunicaci[oó]n|10054|10053|10060|semaphore timeout|communication link') {
+                        $isNetError = $true
+                    }
+                    elseif ($ex -is [System.Data.SqlClient.SqlException]) {
+                        $netCodes = @(10054, 10053, 233, 64, 121, 10060, 2, 53)
+                        foreach ($sqlErr in $ex.Errors) {
+                            if ($netCodes -contains $sqlErr.Number) {
+                                $isNetError = $true
+                                break
                             }
                         }
                     }
-                    [void]$sb.AppendLine(($rowVals -join "`t"))
-                }
-                $clipText = $sb.ToString().TrimEnd()
-                try {
-                    Set-Clipboard -Value $clipText -ErrorAction Stop
-                }
-                catch {
-                    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-                    [System.Windows.Forms.Clipboard]::SetText($clipText)
-                }
-                Write-Host "✓ Copiado al portapapeles (listo para Ctrl+V en Excel)" -ForegroundColor Cyan
-                return
-            }
 
-            if ($ExportCsv) {
-                if ($dt.Columns.Count -eq 0) {
-                    Write-Warning "La consulta no devolvió filas ni columnas para exportar a CSV."
+                    # Si es error de socket TCP y usamos sesión persistente: reconectar silenciosamente una sola vez
+                    if ($isNetError -and $isPersistent -and $attempt -lt $maxAttempts) {
+                        qdisconnect -Quiet
+                        try {
+                            $cs = "Server=$savedServer;Database=$savedDb;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=10;"
+                            $global:SqlSession = New-Object System.Data.SqlClient.SqlConnection($cs)
+                            $global:SqlSession.Open()
+
+                            $initCmd = $global:SqlSession.CreateCommand()
+                            $initCmd.CommandText = "SET XACT_ABORT ON;"
+                            $initCmd.CommandTimeout = 5
+                            [void]$initCmd.ExecuteNonQuery()
+
+                            $conn = $global:SqlSession
+                            $dt.Clear()
+                            continue
+                        }
+                        catch {
+                            $global:SqlSession = $null
+                            Write-Error "Fallo en reconexión automática tras error de socket TCP: $($_.Exception.Message)"
+                            return
+                        }
+                    }
+
+                    # Si no es un socket zombi o falló el reintento:
+                    Write-Error "Error de SQL Server: $($ex.Message)"
                     return
                 }
-
-                $parent = Split-Path $ExportCsv -Parent
-                if ($parent -and -not (Test-Path $parent)) {
-                    [void](New-Item -ItemType Directory -Path $parent -Force)
-                }
-
-                $dt | Export-Csv -Path $ExportCsv -NoTypeInformation -Encoding UTF8 -Delimiter ';'
-                Write-Host "✓ Exportado a $ExportCsv" -ForegroundColor Cyan
-                return
-            }
-
-            if ($Grid) {
-                if ($dt.Columns.Count -gt 0) {
-                    $dt | Out-GridView -Title $gridTitle
-                }
-                else {
-                    Write-Host "[OK] Instrucción ejecutada con éxito (sin filas que mostrar en GridView)." -ForegroundColor Green
-                }
-                return
-            }
-
-            if ($dt.Columns.Count -eq 0) {
-                Write-Host "[OK] Instrucción(es) ejecutada(s) correctamente." -ForegroundColor Green
-                return
-            }
-
-            if ($All -or $dt.Rows.Count -le $MaxRows) {
-                $dt
-            }
-            else {
-                Write-Warning "Se recuperaron $($dt.Rows.Count) filas. Mostrando las primeras $MaxRows para no saturar la consola."
-                Write-Host "Tip: Usa 'q ... -All' para verlas todas o '-Grid' para verlas en ventana interactiva.`n" -ForegroundColor DarkGray
-                $dt | Select-Object -First $MaxRows
             }
         }
         finally {
@@ -615,15 +655,153 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                     try {
                         $cleanCmd = $conn.CreateCommand()
                         $cleanCmd.CommandText = "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;"
+                        $cleanCmd.CommandTimeout = 5
                         [void]$cleanCmd.ExecuteNonQuery()
                     }
                     catch { }
                 }
             }
             if ($isTransient -and $conn) {
-                $conn.Close()
-                $conn.Dispose()
+                try {
+                    if ($conn.State -eq 'Open') {
+                        $conn.Close()
+                    }
+                }
+                catch { }
+                finally {
+                    $conn.Dispose()
+                }
             }
+        }
+
+        if (-not $executedSuccessfully) {
+            return
+        }
+
+        # 3.1 Historial persistente en segundo plano ($HOME\.sql_history.tsv)
+        $sw.Stop()
+        $durationMs = $sw.ElapsedMilliseconds
+        try {
+            $serverLogged = if ($conn -and $conn.DataSource) { $conn.DataSource } else { $global:SqlDefaultServer }
+            $dbLogged     = if ($conn -and $conn.Database)   { $conn.Database }   else { $global:SqlDefaultDatabase }
+            $sanitizedSql = ($sqlContent -replace "[\r\n\t]+", " ").Trim()
+            if ($sanitizedSql.Length -gt 3000) {
+                $sanitizedSql = $sanitizedSql.Substring(0, 3000) + " ... [TRUNCATED]"
+            }
+            $historyFile = Join-Path $HOME ".sql_history.tsv"
+            $timestamp   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            $logLine     = "$timestamp`t$serverLogged`t$dbLogged`t$durationMs`t$sanitizedSql"
+            [System.IO.File]::AppendAllLines($historyFile, [string[]]@($logLine), [System.Text.Encoding]::UTF8)
+        }
+        catch { }
+
+        # 4. Exportación y renderizado de resultados
+        if ($Rollback) {
+            $affected = 0
+            if ($dt.Rows.Count -gt 0 -and $dt.Columns.Contains('__DryRunRows__')) {
+                $val = $dt.Rows[0]['__DryRunRows__']
+                if ($null -ne $val -and -not [System.DBNull]::Value.Equals($val)) {
+                    $affected = [int]$val
+                }
+            }
+            Write-Host "Modo DryRun: La sentencia afectaría a $affected filas (Cambios revertidos)." -ForegroundColor Yellow
+            return
+        }
+
+        if ($Json) {
+            if ($dt.Rows.Count -eq 0) {
+                Write-Warning "La consulta no devolvió filas para convertir a JSON."
+                return
+            }
+
+            $rows = @(foreach ($row in $dt.Rows) {
+                $obj = [ordered]@{}
+                foreach ($col in $dt.Columns) {
+                    $val = $row[$col]
+                    $obj[$col.ColumnName] = if ($null -eq $val -or [System.DBNull]::Value.Equals($val)) { $null } else { $val }
+                }
+                [pscustomobject]$obj
+            })
+
+            return ($rows | ConvertTo-Json -Depth 3)
+        }
+
+        if ($Clip) {
+            if ($dt.Columns.Count -eq 0) {
+                Write-Warning "La consulta no devolvió filas ni columnas para copiar al portapapeles."
+                return
+            }
+
+            $colNames = @($dt.Columns | ForEach-Object { $_.ColumnName })
+            $sb = New-Object System.Text.StringBuilder
+            [void]$sb.AppendLine(($colNames -join "`t"))
+            foreach ($row in $dt.Rows) {
+                $rowVals = foreach ($col in $dt.Columns) {
+                    $v = $row[$col]
+                    if ($null -eq $v -or [System.DBNull]::Value.Equals($v)) {
+                        ""
+                    }
+                    else {
+                        $s = $v.ToString()
+                        if ($s -match "[\t\r\n`"]") {
+                            '"' + $s.Replace('"', '""') + '"'
+                        } else {
+                            $s
+                        }
+                    }
+                }
+                [void]$sb.AppendLine(($rowVals -join "`t"))
+            }
+            $clipText = $sb.ToString().TrimEnd()
+            try {
+                Set-Clipboard -Value $clipText -ErrorAction Stop
+            }
+            catch {
+                Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+                [System.Windows.Forms.Clipboard]::SetText($clipText)
+            }
+            Write-Host "✓ Copiado al portapapeles (listo para Ctrl+V en Excel)" -ForegroundColor Cyan
+            return
+        }
+
+        if ($ExportCsv) {
+            if ($dt.Columns.Count -eq 0) {
+                Write-Warning "La consulta no devolvió filas ni columnas para exportar a CSV."
+                return
+            }
+
+            $parent = Split-Path $ExportCsv -Parent
+            if ($parent -and -not (Test-Path $parent)) {
+                [void](New-Item -ItemType Directory -Path $parent -Force)
+            }
+
+            $dt | Export-Csv -Path $ExportCsv -NoTypeInformation -Encoding UTF8 -Delimiter ';'
+            Write-Host "✓ Exportado a $ExportCsv" -ForegroundColor Cyan
+            return
+        }
+
+        if ($Grid) {
+            if ($dt.Columns.Count -gt 0) {
+                $dt | Out-GridView -Title $gridTitle
+            }
+            else {
+                Write-Host "[OK] Instrucción ejecutada con éxito (sin filas que mostrar en GridView)." -ForegroundColor Green
+            }
+            return
+        }
+
+        if ($dt.Columns.Count -eq 0) {
+            Write-Host "[OK] Instrucción(es) ejecutada(s) correctamente." -ForegroundColor Green
+            return
+        }
+
+        if ($All -or $dt.Rows.Count -le $MaxRows) {
+            $dt
+        }
+        else {
+            Write-Warning "Se recuperaron $($dt.Rows.Count) filas. Mostrando las primeras $MaxRows para no saturar la consola."
+            Write-Host "Tip: Usa 'q ... -All' para verlas todas o '-Grid' para verlas en ventana interactiva.`n" -ForegroundColor DarkGray
+            $dt | Select-Object -First $MaxRows
         }
     }
 }
@@ -646,15 +824,16 @@ function desc {
         [switch]$Json
     )
 
-    $clean = $Table.Trim().Trim('"', "'")
+    $clean = ($Table.Trim().Trim('"', "'") -replace '[\0\r\n\t;]', '').Replace("'", "''")
+    $schema = $null
+    $tableName = $null
+
     if ($clean -match '^\[?([^.\]]+)\]?\.\[?([^.\]]+)\]?$') {
-        $schema = $matches[1]
-        $tableName = $matches[2]
-        $filter = "TABLE_SCHEMA = '$schema' AND TABLE_NAME = '$tableName'"
+        $schema = $matches[1].Trim('[]')
+        $tableName = $matches[2].Trim('[]')
     }
     else {
         $tableName = $clean.Trim('[]')
-        $filter = "TABLE_NAME = '$tableName'"
     }
 
     $query = @"
@@ -672,12 +851,17 @@ SELECT
     IS_NULLABLE AS [Nullable],
     ISNULL(COLUMN_DEFAULT, '') AS [Default]
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE $filter
+WHERE (@Schema IS NULL OR TABLE_SCHEMA = @Schema)
+  AND TABLE_NAME = @Table
 ORDER BY ORDINAL_POSITION
 "@
 
     $qParams = @{
         QueryOrPath = $query
+        Parameters  = @{
+            Schema = if ($schema) { $schema } else { $null }
+            Table  = $tableName
+        }
         All         = $true
     }
     if ($Grid)      { $qParams['Grid'] = $true }
@@ -724,19 +908,23 @@ function find-table {
         [switch]$Json
     )
 
-    $cleanPattern = $Pattern.Trim().Trim('"', "'", '%')
+    $cleanPattern = ($Pattern.Trim().Trim('"', "'", '%') -replace '[\0\r\n\t;]', '').Replace("'", "''")
     $query = @"
 SELECT 
     TABLE_SCHEMA AS [Esquema],
     TABLE_NAME AS [Tabla],
     TABLE_TYPE AS [Tipo]
 FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_NAME LIKE '%$cleanPattern%'
+WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+  AND TABLE_NAME LIKE @Pattern
 ORDER BY TABLE_SCHEMA, TABLE_NAME
 "@
 
     $qParams = @{
         QueryOrPath = $query
+        Parameters  = @{
+            Pattern = "%$cleanPattern%"
+        }
         All         = $true
     }
     if ($Grid)      { $qParams['Grid'] = $true }
@@ -765,15 +953,16 @@ function count {
         [switch]$Json
     )
 
-    $clean = $Table.Trim().Trim('"', "'")
+    $clean = ($Table.Trim().Trim('"', "'") -replace '[\0\r\n\t;]', '').Replace("'", "''")
+    $schema = $null
+    $tableName = $null
+
     if ($clean -match '^\[?([^.\]]+)\]?\.\[?([^.\]]+)\]?$') {
-        $schema = $matches[1]
-        $tableName = $matches[2]
-        $filter = "s.name = '$schema' AND t.name = '$tableName'"
+        $schema = $matches[1].Trim('[]')
+        $tableName = $matches[2].Trim('[]')
     }
     else {
         $tableName = $clean.Trim('[]')
-        $filter = "t.name = '$tableName'"
     }
 
     $query = @"
@@ -785,12 +974,17 @@ FROM sys.tables t
 INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
 INNER JOIN sys.dm_db_partition_stats p ON t.object_id = p.object_id
 WHERE p.index_id IN (0, 1)
-  AND $filter
+  AND (@Schema IS NULL OR s.name = @Schema)
+  AND t.name = @Table
 GROUP BY s.name, t.name
 "@
 
     $qParams = @{
         QueryOrPath = $query
+        Parameters  = @{
+            Schema = if ($schema) { $schema } else { $null }
+            Table  = $tableName
+        }
         All         = $true
     }
     if ($Grid)      { $qParams['Grid'] = $true }
@@ -883,12 +1077,12 @@ function see {
         [switch]$Clip
     )
 
-    $clean = $ObjectName.Trim().Trim('"', "'")
+    $clean = ($ObjectName.Trim().Trim('"', "'") -replace '[\0\r\n\t;]', '').Replace("'", "''")
     $query = @"
-SELECT OBJECT_DEFINITION(OBJECT_ID('$clean')) AS [Definition]
+SELECT OBJECT_DEFINITION(OBJECT_ID(@ObjectName)) AS [Definition]
 "@
 
-    $res = q $query -All
+    $res = q -QueryOrPath $query -Parameters @{ ObjectName = $clean } -All
     $code = $null
 
     if ($res -is [System.Data.DataTable] -and $res.Rows.Count -gt 0) {
@@ -902,6 +1096,10 @@ SELECT OBJECT_DEFINITION(OBJECT_ID('$clean')) AS [Definition]
     elseif ($res -and $res.PSObject.Properties['Definition']) {
         $val = $res.Definition
         if ($val) { $code = [string]$val }
+    }
+    elseif ($res -is [System.Data.DataRow]) {
+        $val = $res['Definition']
+        if ($val -ne [System.DBNull]::Value) { $code = [string]$val }
     }
 
     if ([string]::IsNullOrWhiteSpace($code)) {
@@ -1023,6 +1221,270 @@ function qlog {
     }
 
     $out | Format-Table -Property Fecha, BaseDatos, 'Duración', Query -AutoSize
+}
+
+function see-idx {
+    <#
+    .SYNOPSIS
+        Inspecciona los índices y columnas clave de una tabla de SQL Server.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Table,
+
+        [switch]$Grid,
+        [switch]$Clip,
+        [Alias('Csv')]
+        [string]$ExportCsv,
+        [switch]$Json
+    )
+
+    $clean = ($Table.Trim().Trim('"', "'") -replace '[\0\r\n\t;]', '').Replace("'", "''")
+    $schema = $null
+    $tableName = $null
+
+    if ($clean -match '^\[?([^.\]]+)\]?\.\[?([^.\]]+)\]?$') {
+        $schema = $matches[1].Trim('[]')
+        $tableName = $matches[2].Trim('[]')
+    }
+    else {
+        $tableName = $clean.Trim('[]')
+    }
+
+    $query = @"
+SELECT 
+    i.name AS [Indice],
+    i.type_desc AS [Tipo],
+    CASE WHEN i.is_unique = 1 THEN 'Sí' ELSE 'No' END AS [Unique],
+    STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS [Columnas]
+FROM sys.indexes i
+INNER JOIN sys.tables t ON i.object_id = t.object_id
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+WHERE ic.is_included_column = 0
+  AND i.type > 0
+  AND (@Schema IS NULL OR s.name = @Schema)
+  AND t.name = @Table
+GROUP BY i.name, i.type_desc, i.is_unique
+ORDER BY i.type_desc, i.name
+"@
+
+    $qParams = @{
+        QueryOrPath = $query
+        Parameters  = @{
+            Schema = if ($schema) { $schema } else { $null }
+            Table  = $tableName
+        }
+        All         = $true
+    }
+    if ($Grid)      { $qParams['Grid'] = $true }
+    if ($Clip)      { $qParams['Clip'] = $true }
+    if ($ExportCsv) { $qParams['ExportCsv'] = $ExportCsv }
+    if ($Json)      { $qParams['Json'] = $true }
+
+    q @qParams
+}
+
+Register-ArgumentCompleter -CommandName see-idx -ParameterName Table -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+
+    if ($null -eq $global:SqlTableCache -or $global:SqlTableCache.Count -eq 0) {
+        Update-SqlTableCache
+    }
+
+    $cleanWord = $wordToComplete.TrimStart('"', "'", '[')
+    $global:SqlTableCache | Where-Object { $_ -like "$cleanWord*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new(
+            $_,
+            $_,
+            'ParameterValue',
+            "Tabla: $_"
+        )
+    }
+}
+
+function find-col {
+    <#
+    .SYNOPSIS
+        Busca en qué tablas existe una columna según un patrón de nombre.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Pattern,
+
+        [switch]$Grid,
+        [switch]$Clip,
+        [Alias('Csv')]
+        [string]$ExportCsv,
+        [switch]$Json
+    )
+
+    $cleanPattern = ($Pattern.Trim().Trim('"', "'", '%') -replace '[\0\r\n\t;]', '').Replace("'", "''")
+    $query = @"
+SELECT 
+    TABLE_SCHEMA AS [Esquema],
+    TABLE_NAME AS [Tabla],
+    COLUMN_NAME AS [Columna],
+    CASE 
+        WHEN DATA_TYPE IN ('varchar', 'nvarchar', 'char', 'nchar', 'binary', 'varbinary') THEN
+            DATA_TYPE + '(' + CASE WHEN CHARACTER_MAXIMUM_LENGTH = -1 THEN 'MAX' ELSE CAST(CHARACTER_MAXIMUM_LENGTH AS VARCHAR(10)) END + ')'
+        WHEN DATA_TYPE IN ('decimal', 'numeric') THEN
+            DATA_TYPE + '(' + CAST(NUMERIC_PRECISION AS VARCHAR(10)) + ',' + CAST(NUMERIC_SCALE AS VARCHAR(10)) + ')'
+        WHEN DATA_TYPE IN ('time', 'datetime2', 'datetimeoffset') THEN
+            DATA_TYPE + '(' + CAST(DATETIME_PRECISION AS VARCHAR(10)) + ')'
+        ELSE DATA_TYPE
+    END AS [Tipo],
+    IS_NULLABLE AS [Nullable]
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+  AND COLUMN_NAME LIKE @Pattern
+ORDER BY TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME
+"@
+
+    $qParams = @{
+        QueryOrPath = $query
+        Parameters  = @{
+            Pattern = "%$cleanPattern%"
+        }
+        All         = $true
+    }
+    if ($Grid)      { $qParams['Grid'] = $true }
+    if ($Clip)      { $qParams['Clip'] = $true }
+    if ($ExportCsv) { $qParams['ExportCsv'] = $ExportCsv }
+    if ($Json)      { $qParams['Json'] = $true }
+
+    q @qParams
+}
+
+function open-sql {
+    <#
+    .SYNOPSIS
+        Extrae el DDL de un objeto SQL y lo abre directamente en Neovim.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ObjectName
+    )
+
+    $clean = ($ObjectName.Trim().Trim('"', "'") -replace '[\0\r\n\t;]', '').Replace("'", "''")
+    $query = "SELECT OBJECT_DEFINITION(OBJECT_ID(@ObjectName)) AS [Definition]"
+
+    $res = q -QueryOrPath $query -Parameters @{ ObjectName = $clean } -All
+    $code = $null
+
+    if ($res -is [System.Data.DataTable] -and $res.Rows.Count -gt 0) {
+        $val = $res.Rows[0]['Definition']
+        if ($val -ne [System.DBNull]::Value) { $code = [string]$val }
+    }
+    elseif ($res -is [System.Array] -and $res.Count -gt 0) {
+        $val = $res[0].Definition
+        if ($val) { $code = [string]$val }
+    }
+    elseif ($res -and $res.PSObject.Properties['Definition']) {
+        $val = $res.Definition
+        if ($val) { $code = [string]$val }
+    }
+    elseif ($res -is [System.Data.DataRow]) {
+        $val = $res['Definition']
+        if ($val -ne [System.DBNull]::Value) { $code = [string]$val }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($code)) {
+        Write-Host "No se encontró definición para [$ObjectName]" -ForegroundColor Yellow
+        return
+    }
+
+    $safeName = ($clean.Trim('[]') -replace '[^\w\.\-]', '_')
+    $tempFile = Join-Path $env:TEMP "$safeName.sql"
+
+    [System.IO.File]::WriteAllText($tempFile, $code, [System.Text.UTF8Encoding]::new($true))
+    nvim $tempFile
+}
+
+Register-ArgumentCompleter -CommandName open-sql -ParameterName ObjectName -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+
+    if ($null -eq $global:SqlTableCache -or $global:SqlTableCache.Count -eq 0) {
+        Update-SqlTableCache
+    }
+
+    $cleanWord = $wordToComplete.TrimStart('"', "'", '[')
+    $global:SqlTableCache | Where-Object { $_ -like "$cleanWord*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new(
+            $_,
+            $_,
+            'ParameterValue',
+            "Objeto SQL: $_"
+        )
+    }
+}
+
+function qfmt {
+    <#
+    .SYNOPSIS
+        Formatea una consulta SQL con saltos de línea e indentaciones estándar.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Query,
+
+        [switch]$Clip
+    )
+
+    process {
+        $nl = [Environment]::NewLine
+        $ind = '  '
+
+        # 1. Normalizar espacios duplicados
+        $text = ($Query.Trim() -replace '[ \t]+', ' ')
+
+        # 2. Cláusulas principales (salto de línea a nivel raíz)
+        $text = [regex]::Replace($text, '(?mi)\bSELECT\b', 'SELECT')
+        $text = [regex]::Replace($text, '(?mi)\bFROM\b', ($nl + 'FROM'))
+        $text = [regex]::Replace($text, '(?mi)\bWHERE\b', ($nl + 'WHERE'))
+        $text = [regex]::Replace($text, '(?mi)\bGROUP\s+BY\b', ($nl + 'GROUP BY'))
+        $text = [regex]::Replace($text, '(?mi)\bHAVING\b', ($nl + 'HAVING'))
+        $text = [regex]::Replace($text, '(?mi)\bORDER\s+BY\b', ($nl + 'ORDER BY'))
+        $text = [regex]::Replace($text, '(?mi)\bUNION\s+ALL\b', ($nl + $nl + 'UNION ALL' + $nl))
+        $text = [regex]::Replace($text, '(?mi)\bUNION\b', ($nl + $nl + 'UNION' + $nl))
+
+        # 3. Joins (salto de línea con 2 espacios de indentación)
+        $text = [regex]::Replace($text, '(?mi)\bINNER\s+JOIN\b', ($nl + $ind + 'INNER JOIN'))
+        $text = [regex]::Replace($text, '(?mi)\bLEFT\s+(?:OUTER\s+)?JOIN\b', ($nl + $ind + 'LEFT JOIN'))
+        $text = [regex]::Replace($text, '(?mi)\bRIGHT\s+(?:OUTER\s+)?JOIN\b', ($nl + $ind + 'RIGHT JOIN'))
+        $text = [regex]::Replace($text, '(?mi)\bFULL\s+(?:OUTER\s+)?JOIN\b', ($nl + $ind + 'FULL JOIN'))
+        $text = [regex]::Replace($text, '(?mi)\bCROSS\s+JOIN\b', ($nl + $ind + 'CROSS JOIN'))
+        $text = [regex]::Replace($text, '(?mi)(?<!(?:INNER|LEFT|RIGHT|FULL|CROSS)\s+)\bJOIN\b', ($nl + $ind + 'JOIN'))
+
+        # 4. Operadores lógicos (salto de línea con 2 espacios de indentación)
+        $text = [regex]::Replace($text, '(?mi)\bAND\b', ($nl + $ind + 'AND'))
+        $text = [regex]::Replace($text, '(?mi)\bOR\b', ($nl + $ind + 'OR'))
+
+        $result = $text.Trim()
+
+        if ($Clip) {
+            try {
+                Set-Clipboard -Value $result -ErrorAction Stop
+            }
+            catch {
+                Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+                [System.Windows.Forms.Clipboard]::SetText($result)
+            }
+            Write-Host "✓ Consulta formateada copiada al portapapeles" -ForegroundColor Cyan
+            return
+        }
+
+        $result
+    }
 }
 
 # ==============================================================================
