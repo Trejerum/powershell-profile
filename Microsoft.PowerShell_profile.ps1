@@ -53,7 +53,29 @@ function notes   { Set-Location (Join-Path $HOME "Documentos\Notes") }
 # 3. ATAJOS DE GIT
 # ==============================================================================
 
-function g     { git $args }
+# 1. Alias nativo 'g' para Git (permite que posh-git lo detecte automáticamente para autocompletar)
+Set-Alias -Name g -Value git -Option AllScope -ErrorAction SilentlyContinue
+
+# 2. Integración con posh-git (autocompletado con Tab y estado de Git)
+if (Get-Module -ListAvailable -Name posh-git) {
+    Import-Module posh-git -ErrorAction SilentlyContinue
+}
+
+# 3. Autocompletado de ramas para 'gco' con posh-git
+if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
+    Register-ArgumentCompleter -CommandName gco -Native -ScriptBlock {
+        param($wordToComplete, $commandAst, $cursorPosition)
+        if (Get-Command Expand-GitCommand -ErrorAction SilentlyContinue) {
+            $padLength = $cursorPosition - $commandAst.Extent.StartOffset
+            $text = $commandAst.ToString().PadRight($padLength, ' ').Substring(0, $padLength)
+            $text = $text -replace '^gco\s*', 'git checkout '
+            $matches = Expand-GitCommand $text
+            foreach ($m in $matches) {
+                [System.Management.Automation.CompletionResult]::new($m, $m, 'ParameterValue', $m)
+            }
+        }
+    }
+}
 function gs    { git status -sb $args }
 function gp    { git pull $args }
 function gf    { git fetch $args }
@@ -163,8 +185,9 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "General";    Comando = "cb";    Descripcion = "Copia texto o pipeline al portapapeles" }
 
         # Atajos Git
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "g";     Descripcion = "Atajo directo a 'git'" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gs";    Descripcion = "git status -sb" }
+        [PSCustomObject]@{ Categoria = "Git";        Comando = "g";            Descripcion = "Atajo directo a 'git'" }
+        [PSCustomObject]@{ Categoria = "Git";        Comando = "posh-git";     Descripcion = "Autocompletado git con <Tab> y estado en prompt [rama +~-]" }
+        [PSCustomObject]@{ Categoria = "Git";        Comando = "gs";           Descripcion = "git status -sb" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "ga";    Descripcion = "git add ." }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gp/gf"; Descripcion = "git pull / git fetch" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gpush"; Descripcion = "git push" }
@@ -1582,12 +1605,20 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
 }
 
 # ==============================================================================
-# 7. PROMPT PERSONALIZADO (Estado de SQL Server)
+# 7. PROMPT PERSONALIZADO (Estado de Git + SQL Server)
 # ==============================================================================
 
 function prompt {
     $loc = $ExecutionContext.SessionState.Path.CurrentLocation
     Write-Host "PS $loc" -NoNewline
+
+    # Indicador de estado de Git (posh-git)
+    if (Get-Command Write-VcsStatus -ErrorAction SilentlyContinue) {
+        $gitStatus = Write-VcsStatus
+        if ($gitStatus) {
+            Write-Host $gitStatus -NoNewline
+        }
+    }
 
     # Indicador de estado de conexión persistente a SQL Server
     if ($global:SqlSession -and $global:SqlSession.State -eq 'Open') {
