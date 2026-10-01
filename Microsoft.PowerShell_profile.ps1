@@ -36,6 +36,53 @@ function cb {
     }
 }
 
+# Buscar y matar procesos que bloquean puertos TCP específicos (ej. 4200, 5000, 7000)
+function kill-port {
+    <#
+    .SYNOPSIS
+        Busca y finaliza los procesos que estén escuchando en uno o varios puertos TCP.
+    .EXAMPLE
+        kill-port 4200
+        kp 5001, 7000
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [int[]]$Port
+    )
+
+    process {
+        foreach ($p in $Port) {
+            $conns = Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue
+            if (-not $conns) {
+                Write-Host "● Puerto $p : No hay ningún proceso escuchando." -ForegroundColor DarkGray
+                continue
+            }
+
+            $pids = @($conns | Select-Object -ExpandProperty OwningProcess -Unique)
+            foreach ($procId in $pids) {
+                if ($procId -le 4) {
+                    Write-Warning "El puerto $p está retenido por un proceso del sistema (PID $procId)."
+                    continue
+                }
+
+                $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+                $procName = if ($proc) { $proc.ProcessName } else { "Desconocido" }
+
+                try {
+                    Stop-Process -Id $procId -Force -ErrorAction Stop
+                    Write-Host "✓ Puerto $p liberado: Finalizado proceso [$procName] (PID: $procId)" -ForegroundColor Green
+                }
+                catch {
+                    taskkill /F /PID $procId 2>$null
+                    Write-Host "✓ Puerto $p liberado mediante taskkill (PID: $procId)" -ForegroundColor Yellow
+                }
+            }
+        }
+    }
+}
+Set-Alias kp kill-port
+
 # ==============================================================================
 # 2. NAVEGACIÓN RÁPIDA (PROYECTOS)
 # ==============================================================================
@@ -182,7 +229,8 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Navegación"; Comando = "notes";   Descripcion = "Ir a la carpeta de Notas" }
 
         # Utilidades
-        [PSCustomObject]@{ Categoria = "General";    Comando = "cb";    Descripcion = "Copia texto o pipeline al portapapeles" }
+        [PSCustomObject]@{ Categoria = "General";    Comando = "cb";        Descripcion = "Copia texto o pipeline al portapapeles" }
+        [PSCustomObject]@{ Categoria = "General";    Comando = "kill-port"; Descripcion = "Libera puertos TCP bloqueados (alias: kp, ej. kp 4200)" }
 
         # Atajos Git
         [PSCustomObject]@{ Categoria = "Git";        Comando = "g";            Descripcion = "Atajo directo a 'git'" }
@@ -212,6 +260,8 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see";        Descripcion = "Inspecciona DDL/código de vista/SP/función (ej. see <objeto> [-Clip])" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see-idx";    Descripcion = "Inspecciona índices y columnas clave (ej. see-idx <tabla>)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-col";   Descripcion = "Busca en qué tablas existe una columna (ej. find-col <col>)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-code";  Descripcion = "Busca texto en SPs, vistas, funciones y triggers (alias: find-sp)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q2excel";    Descripcion = "Ejecuta consulta SQL y la abre directamente en Excel (alias: qexcel)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "open-sql";   Descripcion = "Abre DDL de SP/vista directamente en Neovim (ej. open-sql <obj>)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qfmt";       Descripcion = "Formatea consulta SQL con indentaciones (ej. qfmt <query> [-Clip])" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
@@ -1411,6 +1461,102 @@ ORDER BY TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME
 
     q @qParams
 }
+
+function find-code {
+    <#
+    .SYNOPSIS
+        Busca texto dentro del código DDL de Procedimientos Almacenados, Vistas, Funciones y Triggers.
+    .EXAMPLE
+        find-code "Clientes"
+        find-sp "usp_CalcularDescuento" -Grid
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Pattern,
+
+        [switch]$Grid,
+        [switch]$Clip,
+        [Alias('Csv')]
+        [string]$ExportCsv,
+        [switch]$Json
+    )
+
+    $cleanPattern = ($Pattern.Trim().Trim('"', "'", '%') -replace '[\0\r\n\t;]', '').Replace("'", "''")
+    $query = @"
+SELECT 
+    SCHEMA_NAME(o.schema_id) AS [Esquema],
+    o.name AS [Objeto],
+    CASE o.type
+        WHEN 'P'  THEN 'Stored Procedure'
+        WHEN 'V'  THEN 'View'
+        WHEN 'FN' THEN 'Scalar Function'
+        WHEN 'IF' THEN 'Inline Table Function'
+        WHEN 'TF' THEN 'Table Function'
+        WHEN 'TR' THEN 'Trigger'
+        ELSE o.type_desc
+    END AS [Tipo],
+    o.modify_date AS [UltimaModificacion]
+FROM sys.sql_modules m
+INNER JOIN sys.objects o ON m.object_id = o.object_id
+WHERE m.definition LIKE @Pattern
+ORDER BY [Esquema], [Tipo], o.name
+"@
+
+    $qParams = @{
+        QueryOrPath = $query
+        Parameters  = @{ Pattern = "%$cleanPattern%" }
+        All         = $true
+    }
+    if ($Grid)      { $qParams['Grid'] = $true }
+    if ($Clip)      { $qParams['Clip'] = $true }
+    if ($ExportCsv) { $qParams['ExportCsv'] = $ExportCsv }
+    if ($Json)      { $qParams['Json'] = $true }
+
+    q @qParams
+}
+Set-Alias find-sp  find-code
+Set-Alias grep-sql find-code
+
+function q2excel {
+    <#
+    .SYNOPSIS
+        Ejecuta una consulta SQL y abre el resultado directamente en Excel.
+    .EXAMPLE
+        q2excel "SELECT TOP 100 * FROM Articulos WHERE Activo = 1"
+        q2excel ./reporte.sql
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$QueryOrPath,
+
+        [Parameter()]
+        [Alias('Params')]
+        [System.Collections.IDictionary]$Parameters,
+
+        [int]$Timeout = 120
+    )
+
+    $tempCsv = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "sql_export_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).csv")
+    $qParams = @{
+        QueryOrPath = $QueryOrPath
+        ExportCsv   = $tempCsv
+        All         = $true
+        Timeout     = $Timeout
+    }
+    if ($Parameters) { $qParams['Parameters'] = $Parameters }
+
+    q @qParams
+
+    if (Test-Path -LiteralPath $tempCsv) {
+        Write-Host "Abriendo en Excel..." -ForegroundColor Cyan
+        Start-Process $tempCsv
+    }
+}
+Set-Alias qexcel q2excel
 
 function open-sql {
     <#

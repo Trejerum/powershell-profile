@@ -56,11 +56,11 @@ Set-PSReadLineOption -PredictionSource History
 | Sección | Descripción |
 | :--- | :--- |
 | **0. Codificación** | Establece `UTF-8` en entrada, salida y consola. |
-| **1. Utilidades** | Funciones comunes como `cb` (copiar al portapapeles desde pipe o texto). |
+| **1. Utilidades** | Funciones comunes como `cb` (portapapeles) y `kill-port` / `kp` (liberar puertos TCP). |
 | **2. Navegación** | Atajos a proyectos: `sga`, `rsga`, `rsga2`, `rsga3`, `profile`, `notes`. |
 | **3. Atajos de Git** | Integración de `posh-git` + atajos rápidos (`g`, `gs`, `ga`, `gp`, `gpush`, `gpsup`, `gco`, `glog`, `gss`, `gsl`, `gsp`, `agy-review-pr`). |
 | **4. Ayuda Rápida** | `phelp` o `?p` con filtro opcional (`phelp git`, `phelp sql`). |
-| **5. SQL Server Toolkit** | Conexión interactiva persistente, consultas directas (`q`), descripciones (`desc`), explorador (`find-table`, `see`, `who`...). |
+| **5. SQL Server Toolkit** | Conexión interactiva persistente, consultas (`q`, `q2excel`), descripciones (`desc`), explorador (`find-table`, `find-col`, `find-code`, `see`, `who`...). |
 | **6. Autocompletado SQL** | `Ctrl + Espacio` en PSReadLine para autocompletar tablas de SQL Server en caché. |
 | **7. Prompt Personalizado** | Muestra la ruta actual, el estado de Git (`posh-git`) y la sesión activa de SQL (`[BD ⚡]`). |
 
@@ -86,6 +86,17 @@ Para ver todos los comandos de Git disponibles:
 - `gsl`: Listar stashes con colores y fechas relativas.
 - `gsp [idx]`: Aplicar y retirar stash.
 - `agy-review-pr`: Revisión de Pull Requests con Antigravity sin saltar de rama.
+
+---
+
+## 🛠️ Utilidades y SQL Server Toolkit Destacados
+
+- **`kill-port <puerto>` (alias `kp`)**: Finaliza el proceso que retiene un puerto local (ej. `kp 4200` o `kp 5000, 7000`).
+- **`find-code <patrón>` (alias `find-sp`, `grep-sql`)**: Busca texto o nombres de tablas dentro de la definición de Procedimientos Almacenados, Vistas, Funciones y Triggers (soporta `-Grid`, `-Clip`, `-Csv`, `-Json`).
+- **`q2excel <consulta>` (alias `qexcel`)**: Ejecuta una consulta SQL y la abre directamente en Excel con delimitador de punto y coma `;` para formato español sin descuadre.
+- **`find-col <columna>`**: Busca en qué tablas y vistas de la base de datos existe una columna dada.
+- **`see <objeto>` / `open-sql <objeto>`**: Inspecciona el código DDL de una vista o SP en consola o directamente en Neovim.
+- **`q <consulta>`**: Ejecuta consultas ultrarrápidas con salvaguardas (switches: `-Grid`, `-Clip`, `-Csv`, `-Json`, `-DryRun`, `-Timeout N`).
 
 ---
 
