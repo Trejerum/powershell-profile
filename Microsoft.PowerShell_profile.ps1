@@ -794,19 +794,25 @@ function q {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf -ErrorAction SilentlyContinue)) {
             $isFilePath = $true
             $resolvedPath = (Resolve-Path -LiteralPath $candidate).ProviderPath
-            $sqlContent = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8
+            $sqlContent = [System.IO.File]::ReadAllText($resolvedPath, [System.Text.Encoding]::UTF8)
             $gridTitle = [System.IO.Path]::GetFileName($resolvedPath)
         }
         elseif ($QueryOrPath -and (Test-Path -LiteralPath $QueryOrPath -PathType Leaf -ErrorAction SilentlyContinue)) {
             $isFilePath = $true
             $resolvedPath = (Resolve-Path -LiteralPath $QueryOrPath).ProviderPath
-            $sqlContent = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8
+            $sqlContent = [System.IO.File]::ReadAllText($resolvedPath, [System.Text.Encoding]::UTF8)
             $gridTitle = [System.IO.Path]::GetFileName($resolvedPath)
         }
         elseif ($candidate -and (Test-Path -Path $candidate -PathType Leaf -ErrorAction SilentlyContinue)) {
             $isFilePath = $true
             $resolvedPath = (Resolve-Path -Path $candidate).ProviderPath
-            $sqlContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
+            $sqlContent = [System.IO.File]::ReadAllText($resolvedPath, [System.Text.Encoding]::UTF8)
+            $gridTitle = [System.IO.Path]::GetFileName($resolvedPath)
+        }
+        elseif ($QueryOrPath -and (Test-Path -Path $QueryOrPath -PathType Leaf -ErrorAction SilentlyContinue)) {
+            $isFilePath = $true
+            $resolvedPath = (Resolve-Path -Path $QueryOrPath).ProviderPath
+            $sqlContent = [System.IO.File]::ReadAllText($resolvedPath, [System.Text.Encoding]::UTF8)
             $gridTitle = [System.IO.Path]::GetFileName($resolvedPath)
         }
         else {
