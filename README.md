@@ -100,6 +100,21 @@ Para ver todos los comandos de Git disponibles:
 
 ---
 
+## ⚡ Integración con Neovim
+
+El perfil convierte a Neovim en el editor central del flujo de trabajo:
+
+- **Editor predeterminado (`$env:EDITOR = 'nvim'`)**: Git (`commit`, `rebase -i`) y herramientas de consola utilizan Neovim automáticamente.
+- **`v [archivo]` o `<comando> | v`**: Wrapper inteligente. Si recibe argumentos abre el archivo (`v main.cs`); si recibe datos por tubería (`gs | v`, `q "SELECT..." | v`), vuelca la salida a un buffer temporal en Neovim y lo elimina al cerrar.
+- **`vrg <patrón> [ruta]`**: Ejecuta Ripgrep y abre automáticamente Neovim cargando los resultados en la lista **Quickfix** (`:copen`), saltando al primer resultado.
+- **`vmod` (alias `vdiff`)**: Muestra en consola la lista coloreada de cambios (`[Modificado]`, `[Nuevo]`, `[Staged]`) y los abre en Neovim en pestañas individuales con la lista Quickfix (`:copen`) activa abajo. Soporta `-List` (o `-l`) para solo ver la lista sin abrir el editor, y `-Splits` para divisiones verticales.
+- **`vsql`**: Abre un scratchpad SQL temporal con sintaxis resaltada y contexto de la BD actual. Al guardar y salir (`:wq`), pregunta si deseas ejecutarlo directamente con `q`.
+- **`ep` (alias `edit-profile`)**: Abre `Microsoft.PowerShell_profile.ps1` en Neovim.
+- **`en` (alias `edit-nvim`)**: Abre la carpeta de configuración de Neovim (`~\AppData\Local\nvim`).
+- **<kbd>Ctrl</kbd>+<kbd>X</kbd>, <kbd>Ctrl</kbd>+<kbd>E</kbd>**: Edita el comando que estés escribiendo en la consola dentro de una ventana de Neovim y lo devuelve al prompt listo para ejecutar.
+
+---
+
 ## ⚠️ Reglas Críticas sobre la Codificación del Perfil
 
 Windows PowerShell 5.1 requiere estrictamente:

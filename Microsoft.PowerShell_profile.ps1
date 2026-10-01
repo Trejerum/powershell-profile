@@ -5,6 +5,13 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding           = [System.Text.Encoding]::UTF8
 
+# Editor predeterminado (Neovim) para Git y herramientas de consola
+if (Get-Command nvim -ErrorAction SilentlyContinue) {
+    $env:EDITOR     = 'nvim'
+    $env:VISUAL     = 'nvim'
+    $env:GIT_EDITOR = 'nvim'
+}
+
 # ==============================================================================
 # 1. UTILIDADES GENERALES
 # ==============================================================================
@@ -83,6 +90,94 @@ function kill-port {
 }
 Set-Alias kp kill-port
 
+# Wrapper inteligente para Neovim: abre archivos o consume datos de la tubería (pipeline)
+function v {
+    <#
+    .SYNOPSIS
+        Wrapper inteligente para Neovim. Abre archivos o consume la tubería (pipeline) en un buffer.
+    .EXAMPLE
+        v Program.cs
+        v .
+        gs | v
+        q "SELECT TOP 10 * FROM Articulos" | v
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline = $true)]
+        $InputObject,
+
+        [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+        [string[]]$Path
+    )
+
+    begin {
+        $isPipe = $PSCmdlet.MyInvocation.ExpectingInput
+        $pipeItems = @()
+    }
+    process {
+        if ($isPipe -and $null -ne $InputObject) {
+            $pipeItems += $InputObject
+        }
+    }
+    end {
+        if ($isPipe -and $pipeItems.Count -gt 0) {
+            $tempFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "nvim_pipe_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).txt")
+            $text = ($pipeItems | Out-String).TrimEnd()
+            [System.IO.File]::WriteAllText($tempFile, $text, [System.Text.UTF8Encoding]::new($false))
+            try {
+                nvim $tempFile
+            }
+            finally {
+                Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+        elseif ($Path -and $Path.Count -gt 0) {
+            nvim @Path
+        }
+        else {
+            nvim
+        }
+    }
+}
+
+# Busca texto con Ripgrep y abre los resultados en Neovim dentro de la lista Quickfix (:copen)
+function vrg {
+    <#
+    .SYNOPSIS
+        Busca texto con Ripgrep y abre los resultados en Neovim dentro de la lista Quickfix (:copen).
+    .EXAMPLE
+        vrg "Get-ActiveSql"
+        vrg "kill-port" src/
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Pattern,
+
+        [Parameter(Position = 1)]
+        [string]$Path = "."
+    )
+
+    if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
+        Write-Error "Ripgrep ('rg') no está instalado o no se encuentra en el PATH."
+        return
+    }
+
+    $tempQf = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "nvim_qf_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).txt")
+    try {
+        & rg --vimgrep $Pattern $Path | Out-File -FilePath $tempQf -Encoding UTF8
+        if (-not (Test-Path -LiteralPath $tempQf) -or (Get-Item -LiteralPath $tempQf).Length -eq 0) {
+            Write-Host "● No se encontraron coincidencias para '$Pattern'." -ForegroundColor Yellow
+            return
+        }
+        nvim -q $tempQf -c "copen"
+    }
+    finally {
+        Remove-Item -LiteralPath $tempQf -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ==============================================================================
 # 2. NAVEGACIÓN RÁPIDA (PROYECTOS)
 # ==============================================================================
@@ -95,6 +190,10 @@ function rsga2   { Set-Location (Join-Path $script:SgaRoot "RSGA_2") }
 function rsga3   { Set-Location (Join-Path $script:SgaRoot "RSGA_3") }
 function profile { Set-Location (Split-Path -Parent $PROFILE) }
 function notes   { Set-Location (Join-Path $HOME "Documentos\Notes") }
+function ep      { nvim $PROFILE }
+function en      { nvim (Join-Path $env:LOCALAPPDATA "nvim") }
+Set-Alias edit-profile ep
+Set-Alias edit-nvim    en
 
 # ==============================================================================
 # 3. ATAJOS DE GIT
@@ -211,6 +310,118 @@ Pasos:
     }
 }
 
+# Abrir archivos modificados/nuevos del repositorio Git en Neovim
+function vmod {
+    <#
+    .SYNOPSIS
+        Muestra y abre en Neovim todos los archivos modificados, agregados o no rastreados en Git.
+    .EXAMPLE
+        vmod           # Lista los archivos en consola y los abre en pestañas con Quickfix
+        vmod -List     # Solo muestra en consola qué archivos están modificados
+        vmod -Splits   # Abre los archivos en divisiones verticales
+        vmod -Buffers  # Abre los archivos como buffers normales sin pestañas
+    #>
+    [CmdletBinding()]
+    param(
+        [Alias('l')]
+        [switch]$List,
+        [switch]$Buffers,
+        [switch]$Splits
+    )
+
+    $repoRoot = (git rev-parse --show-toplevel 2>$null)
+    if (-not $repoRoot) {
+        Write-Host "● No estás dentro de un repositorio Git." -ForegroundColor Yellow
+        return
+    }
+    $repoRoot = $repoRoot.Trim()
+
+    $statusLines = @(git status --porcelain 2>$null)
+    if (-not $statusLines -or $statusLines.Count -eq 0) {
+        Write-Host "● No hay archivos modificados en el repositorio actual." -ForegroundColor Yellow
+        return
+    }
+
+    $items = @()
+    foreach ($line in $statusLines) {
+        if ($line -match '^(.{2})\s+(.+)$') {
+            $st = $matches[1]
+            $rawPath = $matches[2].Trim().Trim('"')
+            if ($rawPath -match '->\s*(.+)$') {
+                $rawPath = $matches[1].Trim().Trim('"')
+            }
+            $absPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($repoRoot, $rawPath))
+            if (Test-Path -LiteralPath $absPath) {
+                $desc = if ($st -eq '??') { 'Nuevo' }
+                        elseif ($st -match '^M') { 'Staged' }
+                        elseif ($st -match '^.M') { 'Modificado' }
+                        elseif ($st -match 'A') { 'Añadido' }
+                        elseif ($st -match 'D') { 'Eliminado' }
+                        else { 'Modificado' }
+                $items += [PSCustomObject]@{
+                    Estado       = $desc
+                    Codigo       = $st.Trim()
+                    RutaRelativa = $rawPath
+                    RutaAbsoluta = $absPath
+                }
+            }
+        }
+    }
+
+    if ($items.Count -eq 0) {
+        Write-Host "● No se encontraron archivos modificados accesibles en disco." -ForegroundColor Yellow
+        return
+    }
+
+    # 1. Mostrar resumen claro y formateado en la consola
+    Write-Host "`n● Archivos con cambios en el repositorio ($($items.Count)):`n" -ForegroundColor DarkCyan
+    foreach ($item in $items) {
+        $color = switch ($item.Estado) {
+            'Nuevo'      { 'Green' }
+            'Añadido'    { 'Green' }
+            'Staged'     { 'Cyan' }
+            'Eliminado'  { 'Red' }
+            default      { 'Yellow' }
+        }
+        $badge = " [$($item.Estado)]".PadRight(15)
+        Write-Host $badge -ForegroundColor $color -NoNewline
+        Write-Host " -> " -ForegroundColor DarkGray -NoNewline
+        Write-Host $item.RutaRelativa -ForegroundColor White
+    }
+    Write-Host ""
+
+    # Si solo se solicitó listar, terminar aquí
+    if ($List) {
+        return
+    }
+
+    # 2. Generar lista Quickfix para Neovim
+    $tempQf = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "vmod_qf_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).txt")
+    $qfLines = @(foreach ($item in $items) {
+        "$($item.RutaAbsoluta):1:1: [$($item.Estado)] $($item.RutaRelativa)"
+    })
+    [System.IO.File]::WriteAllLines($tempQf, $qfLines, [System.Text.UTF8Encoding]::new($false))
+
+    $targetFiles = @($items | Select-Object -ExpandProperty RutaAbsoluta)
+
+    try {
+        if ($Splits) {
+            nvim -O @targetFiles -q $tempQf -c "copen"
+        }
+        elseif ($Buffers) {
+            nvim @targetFiles -q $tempQf -c "copen"
+        }
+        else {
+            # Modo por defecto: pestañas individuales visibles + Quickfix abierto
+            nvim -p @targetFiles -q $tempQf -c "copen"
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $tempQf -Force -ErrorAction SilentlyContinue
+    }
+}
+Set-Alias vdiff vmod
+
 # ==============================================================================
 # 4. AYUDA RÁPIDA DEL PERFIL
 # ==============================================================================
@@ -227,8 +438,12 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Navegación"; Comando = "rsga3";   Descripcion = "Ir a RSGA_3" }
         [PSCustomObject]@{ Categoria = "Navegación"; Comando = "profile"; Descripcion = "Ir a la carpeta del perfil de PowerShell" }
         [PSCustomObject]@{ Categoria = "Navegación"; Comando = "notes";   Descripcion = "Ir a la carpeta de Notas" }
+        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "ep";      Descripcion = "Abre `$PROFILE en Neovim (alias: edit-profile)" }
+        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "en";      Descripcion = "Abre config de Neovim en Neovim (alias: edit-nvim)" }
 
         # Utilidades
+        [PSCustomObject]@{ Categoria = "General";    Comando = "v";         Descripcion = "Wrapper Neovim: abre archivo o consume pipeline (<salida> | v)" }
+        [PSCustomObject]@{ Categoria = "General";    Comando = "vrg";       Descripcion = "Busca con Ripgrep y abre resultados en Neovim Quickfix" }
         [PSCustomObject]@{ Categoria = "General";    Comando = "cb";        Descripcion = "Copia texto o pipeline al portapapeles" }
         [PSCustomObject]@{ Categoria = "General";    Comando = "kill-port"; Descripcion = "Libera puertos TCP bloqueados (alias: kp, ej. kp 4200)" }
 
@@ -246,6 +461,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gss";   Descripcion = "Stash con timestamp y rama (incluye untracked)" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gsl";   Descripcion = "Listar stashes coloreados" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gsp";           Descripcion = "Aplicar stash (ej. 'gsp' o 'gsp 2')" }
+        [PSCustomObject]@{ Categoria = "Git";        Comando = "vmod";          Descripcion = "Lista cambios y abre modificados en Neovim (alias: vdiff, -List, -Splits)" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "agy-review-pr"; Descripcion = "Revisa PR con Antigravity (ej. agy-review-pr <rama> [base] [-Print])" }
 
         # SQL Server Toolkit
@@ -263,6 +479,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-code";  Descripcion = "Busca texto en SPs, vistas, funciones y triggers (alias: find-sp)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q2excel";    Descripcion = "Ejecuta consulta SQL y la abre directamente en Excel (alias: qexcel)" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "open-sql";   Descripcion = "Abre DDL de SP/vista directamente en Neovim (ej. open-sql <obj>)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "vsql";       Descripcion = "Scratchpad SQL en Neovim con opción de ejecución con 'q'" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qfmt";       Descripcion = "Formatea consulta SQL con indentaciones (ej. qfmt <query> [-Clip])" }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
     )
@@ -538,6 +755,9 @@ function q {
         [ValidateNotNullOrEmpty()]
         [string]$QueryOrPath,
 
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$RemainingArgs,
+
         [Parameter()]
         [Alias('Params')]
         [System.Collections.IDictionary]$Parameters,
@@ -558,22 +778,48 @@ function q {
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
         # 1. Detección automática: archivo en disco vs sentencia SQL en texto plano
+        # Recomponer la ruta o consulta si contenía espacios y no se usaron comillas
+        $candidate = if ($RemainingArgs -and $RemainingArgs.Count -gt 0) {
+            ($QueryOrPath, ($RemainingArgs -join ' ')) -join ' '
+        } else {
+            $QueryOrPath
+        }
+
         $isFilePath = $false
         $resolvedPath = $null
-        $sqlContent = $QueryOrPath
-        $gridTitle = $QueryOrPath
+        $sqlContent = $null
+        $gridTitle = $candidate
 
-        if ($QueryOrPath -and (Test-Path -LiteralPath $QueryOrPath -PathType Leaf -ErrorAction SilentlyContinue)) {
+        # Comprobar si $candidate (o $QueryOrPath) es una ruta válida en disco
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf -ErrorAction SilentlyContinue)) {
+            $isFilePath = $true
+            $resolvedPath = (Resolve-Path -LiteralPath $candidate).ProviderPath
+            $sqlContent = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8
+            $gridTitle = [System.IO.Path]::GetFileName($resolvedPath)
+        }
+        elseif ($QueryOrPath -and (Test-Path -LiteralPath $QueryOrPath -PathType Leaf -ErrorAction SilentlyContinue)) {
             $isFilePath = $true
             $resolvedPath = (Resolve-Path -LiteralPath $QueryOrPath).ProviderPath
             $sqlContent = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8
             $gridTitle = [System.IO.Path]::GetFileName($resolvedPath)
         }
-        elseif ($QueryOrPath -and (Test-Path -Path $QueryOrPath -PathType Leaf -ErrorAction SilentlyContinue)) {
+        elseif ($candidate -and (Test-Path -Path $candidate -PathType Leaf -ErrorAction SilentlyContinue)) {
             $isFilePath = $true
-            $resolvedPath = (Resolve-Path -Path $QueryOrPath).ProviderPath
+            $resolvedPath = (Resolve-Path -Path $candidate).ProviderPath
             $sqlContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
             $gridTitle = [System.IO.Path]::GetFileName($resolvedPath)
+        }
+        else {
+            # Si parece claramente una ruta a un archivo (.sql o inicio con unidad/carpeta) pero no existe en disco
+            $looksLikePath = ($candidate -match '^(?:[a-zA-Z]:\\|\\\\\w+|\.{1,2}[\\/])' -or $candidate.EndsWith('.sql', [System.StringComparison]::OrdinalIgnoreCase)) -and
+                             ($candidate -notmatch '(?i)\b(?:SELECT|INSERT|UPDATE|DELETE|EXEC|CREATE|ALTER|DROP|SET|DECLARE|BEGIN)\b')
+            if ($looksLikePath) {
+                Write-Error "No se encontró el archivo SQL en la ruta: '$candidate'. Verifica que la ruta exista en disco."
+                return
+            }
+
+            $sqlContent = $candidate
+            $gridTitle = $candidate
         }
 
         if ([string]::IsNullOrWhiteSpace($sqlContent)) {
@@ -1623,6 +1869,40 @@ Register-ArgumentCompleter -CommandName open-sql -ParameterName ObjectName -Scri
     }
 }
 
+# Scratchpad SQL en Neovim con opción de ejecución directa
+function vsql {
+    <#
+    .SYNOPSIS
+        Abre un buffer SQL temporal en Neovim y opcionalmente ejecuta la consulta con 'q'.
+    .EXAMPLE
+        vsql
+    #>
+    [CmdletBinding()]
+    param()
+
+    $tempSql = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "scratch_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).sql")
+    $header = "-- Scratchpad SQL en [$global:SqlDefaultDatabase]@[$global:SqlDefaultServer]`r`n-- Escribe tu consulta y guarda con :wq`r`n`r`n"
+    [System.IO.File]::WriteAllText($tempSql, $header, [System.Text.UTF8Encoding]::new($true))
+
+    try {
+        nvim $tempSql
+        if (Test-Path -LiteralPath $tempSql) {
+            $rawContent = [System.IO.File]::ReadAllText($tempSql)
+            $clean = ($rawContent -replace '(?m)^--.*$', '').Trim()
+            if (-not [string]::IsNullOrWhiteSpace($clean)) {
+                Write-Host ""
+                $answer = Read-Host "¿Deseas ejecutar la consulta con 'q'? (S/n)"
+                if ([string]::IsNullOrWhiteSpace($answer) -or $answer -match '^(s|si|y|yes)$') {
+                    q -QueryOrPath $tempSql
+                }
+            }
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $tempSql -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function qfmt {
     <#
     .SYNOPSIS
@@ -1748,6 +2028,9 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
             [Microsoft.PowerShell.PSConsoleReadLine]::Insert($suffix)
         }
     }
+
+    # Edición visual de la línea de comandos con Neovim (Ctrl+X, Ctrl+E)
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+x,Ctrl+e' -Function ViEditVisually
 }
 
 # ==============================================================================
