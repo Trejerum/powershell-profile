@@ -115,6 +115,33 @@ function gsp {
     git stash pop "stash@{$Index}"
 }
 
+# Revisión de Pull Requests con Antigravity sin checkout de rama
+function agy-review-pr {
+    param (
+        [Parameter(Mandatory=$true, Position=0)]
+        [string]$Branch,
+        [Parameter(Position=1)]
+        [string]$Base = "develop",
+        [switch]$Print
+    )
+
+    $prompt = @"
+Actúa como un Senior Software Developer experimentado en calidad de software y proyectos de largo recorrido.
+Analiza la rama remota '$Branch' comparada contra '$Base' sin hacer checkout ni switch de rama.
+Pasos:
+1. Ejecuta 'git fetch origin $Branch $Base' si hace falta.
+2. Extrae el diff con 'git diff origin/$Base...origin/$Branch'.
+3. Inspecciona archivos clave locales si requieres contexto de arquitectura.
+4. Evalúa regresiones, bugs, consistencia y da un veredicto final: [APROBADA] / [CAMBIOS REQUERIDOS] / [RECHAZADA] con informe justificado.
+"@
+
+    if ($Print) {
+        agy -p $prompt
+    } else {
+        agy -i $prompt
+    }
+}
+
 # ==============================================================================
 # 4. AYUDA RÁPIDA DEL PERFIL
 # ==============================================================================
@@ -147,38 +174,39 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gme";   Descripcion = "Commits remotos de Diego Corral" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gss";   Descripcion = "Stash con timestamp y rama (incluye untracked)" }
         [PSCustomObject]@{ Categoria = "Git";        Comando = "gsl";   Descripcion = "Listar stashes coloreados" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gsp";   Descripcion = "Aplicar stash (ej. 'gsp' o 'gsp 2')" }
- 
-         # SQL Server Toolkit
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q";          Descripcion = "Ejecuta SQL/.sql (switches: -Grid, -Clip, -Csv, -Json, -DryRun, -Timeout N)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect";   Descripcion = "Conecta sesión persistente en BD (ej. qconnect [Serv] [BD])" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc";      Descripcion = "Desconecta sesión persistente (alias de qdisconnect)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "use";        Descripcion = "Cambia BD activa y refresca caché (ej. use <BD>)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "desc";       Descripcion = "Describe columnas y tipos de una tabla (ej. desc <tabla>)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-table"; Descripcion = "Busca tablas/vistas por patrón (ej. find-table <patrón>)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "count";      Descripcion = "Recuento ultrarrápido sin scan (sys.dm_db_partition_stats)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who";        Descripcion = "Monitor de sesiones activas y bloqueos (sys.dm_exec_requests)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see";        Descripcion = "Inspecciona DDL/código de vista/SP/función (ej. see <objeto> [-Clip])" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see-idx";    Descripcion = "Inspecciona índices y columnas clave (ej. see-idx <tabla>)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-col";   Descripcion = "Busca en qué tablas existe una columna (ej. find-col <col>)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "open-sql";   Descripcion = "Abre DDL de SP/vista directamente en Neovim (ej. open-sql <obj>)" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qfmt";       Descripcion = "Formatea consulta SQL con indentaciones (ej. qfmt <query> [-Clip])" }
-         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
-     )
- 
-     if ($Filter) {
-         $commands = $commands | Where-Object {
-             $_.Comando -like "*$Filter*" -or $_.Descripcion -like "*$Filter*" -or $_.Categoria -like "*$Filter*"
-         }
-     }
- 
-     Write-Host "`n=== Comandos del `$PROFILE ===`n" -ForegroundColor DarkCyan
- 
-     $groups = $commands | Group-Object Categoria
-     foreach ($group in $groups) {
-         Write-Host " [$($group.Name)]" -ForegroundColor Yellow
-         foreach ($item in $group.Group) {
-             $cmd = $item.Comando.PadRight(12)
+        [PSCustomObject]@{ Categoria = "Git";        Comando = "gsp";           Descripcion = "Aplicar stash (ej. 'gsp' o 'gsp 2')" }
+        [PSCustomObject]@{ Categoria = "Git";        Comando = "agy-review-pr"; Descripcion = "Revisa PR con Antigravity (ej. agy-review-pr <rama> [base] [-Print])" }
+
+        # SQL Server Toolkit
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q";          Descripcion = "Ejecuta SQL/.sql (switches: -Grid, -Clip, -Csv, -Json, -DryRun, -Timeout N)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect";   Descripcion = "Conecta sesión persistente en BD (ej. qconnect [Serv] [BD])" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc";      Descripcion = "Desconecta sesión persistente (alias de qdisconnect)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "use";        Descripcion = "Cambia BD activa y refresca caché (ej. use <BD>)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "desc";       Descripcion = "Describe columnas y tipos de una tabla (ej. desc <tabla>)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-table"; Descripcion = "Busca tablas/vistas por patrón (ej. find-table <patrón>)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "count";      Descripcion = "Recuento ultrarrápido sin scan (sys.dm_db_partition_stats)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who";        Descripcion = "Monitor de sesiones activas y bloqueos (sys.dm_exec_requests)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see";        Descripcion = "Inspecciona DDL/código de vista/SP/función (ej. see <objeto> [-Clip])" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see-idx";    Descripcion = "Inspecciona índices y columnas clave (ej. see-idx <tabla>)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-col";   Descripcion = "Busca en qué tablas existe una columna (ej. find-col <col>)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "open-sql";   Descripcion = "Abre DDL de SP/vista directamente en Neovim (ej. open-sql <obj>)" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qfmt";       Descripcion = "Formatea consulta SQL con indentaciones (ej. qfmt <query> [-Clip])" }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
+    )
+
+    if ($Filter) {
+        $commands = $commands | Where-Object {
+            $_.Comando -like "*$Filter*" -or $_.Descripcion -like "*$Filter*" -or $_.Categoria -like "*$Filter*"
+        }
+    }
+
+    Write-Host "`n=== Comandos del `$PROFILE ===`n" -ForegroundColor DarkCyan
+
+    $groups = $commands | Group-Object Categoria
+    foreach ($group in $groups) {
+        Write-Host " [$($group.Name)]" -ForegroundColor Yellow
+        foreach ($item in $group.Group) {
+            $cmd = $item.Comando.PadRight(14)
              Write-Host "   $cmd" -NoNewline -ForegroundColor Green
              Write-Host " -> " -NoNewline -ForegroundColor DarkGray
              Write-Host $item.Descripcion -ForegroundColor White
