@@ -19,18 +19,19 @@ El perfil detecta automáticamente las herramientas instaladas y activa sus acel
 
 ---
 
-## 📂 Estructura del Perfil (`Microsoft.PowerShell_profile.ps1`)
+## 📂 Arquitectura Modular (`profile.d/`)
 
-| Sección | Descripción |
-| :--- | :--- |
-| **0. Codificación** | Establece `UTF-8` en entrada, salida y consola. Asigna Neovim como editor global (`$env:EDITOR = 'nvim'`). |
-| **1. Utilidades Generales** | Archivos (`touch`, `ff`, `head`, `tail`, `extract`), diagnóstico (`ports`, `kill-port`/`kp`, `psfind`, `myip`, `sysinfo`), portapapeles (`cb`) e integración Neovim (`v`, `vrg`). |
-| **2. Navegación Rápida** | Subida de niveles (`..`, `...`, `....`), creación y entrada (`mkcd`), explorador (`open`/`o`), salto dinámico a proyectos (`proj`), recarga (`reload`/`rel`) y atajos a repositorios (`sga`, `rsga`, `rsga2`, `rsga3`, `ep`, `en`). |
-| **3. Atajos de Git & Lazygit** | TUI (`lg`), commits rápidos (`gcom`), checkout/switch (`gco`, `gcob`), ramas ordenadas (`gb`), deshacer (`gundo`), diff split (`vd`), visor de modificados (`vmod`), stash (`gss`, `gsl`, `gsp`) y auditorías con Antigravity (`agy-review-pr`). |
-| **4. Centro de Ayuda (`phelp`)** | Guía de comandos agrupada por áreas (`phelp`, `phelp git`, `phelp sql`) y fichas técnicas detalladas con ejemplos (`phelp <comando>`). |
-| **5. SQL Server Toolkit** | Motor ADO.NET (`q`), sesión persistente (`qconnect`, `qdisc`, `use`), exploración (`dbs`, `tables`, `views`, `top`, `desc`, `count`), búsqueda (`find-table`, `find-col`, `find-code`), monitor (`who`, `see`, `see-idx`), exportación (`q2excel`, `qclip`, `qfmt`) y scratchpad (`vsql`). |
-| **6. Consola & Autocompletado** | Autocompletado de tablas SQL en caché (<kbd>Ctrl</kbd>+<kbd>Espacio</kbd>), edición multilínea en Neovim (<kbd>Ctrl+X, Ctrl+E</kbd>), historial con flechas contextuales (<kbd>↑</kbd>/<kbd>↓</kbd>) y buscador de historial (`hist`). |
-| **7. Prompt Personalizado** | Muestra la ruta activa, el estado en vivo de Git vía `posh-git` y el badge de conexión persistente a SQL Server (`[BD ⚡]`). |
+El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.ps1`) que importa de forma ordenada y aislada los módulos temáticos ubicados en el directorio `profile.d/`. Esto garantiza que un fallo puntual nunca bloquee la consola y facilita enormemente el mantenimiento y control de versiones en Git:
+
+| Archivo | Área | Descripción |
+| :--- | :--- | :--- |
+| **`00-env.ps1`** | **Entorno & Consola** | Codificación `UTF-8` en entrada, salida y consola. Asigna Neovim como editor global (`$env:EDITOR = 'nvim'`) y configura navegación contextual en el historial (<kbd>↑</kbd>/<kbd>↓</kbd>) y edición visual (<kbd>Ctrl+X, Ctrl+E</kbd>). |
+| **`10-navigation.ps1`** | **Navegación Ágil** | Subida de niveles (`..`, `...`, `....`), creación y entrada (`mkcd`), explorador (`open`/`o`), salto dinámico a proyectos (`proj`), recarga (`reload`/`rel`) y atajos a repositorios (`sga`, `rsga`, `rsga2`, `rsga3`, `ep`, `en`). |
+| **`20-git.ps1`** | **Git & Lazygit** | Alias universal `g`, integración con `posh-git`, dashboard en vivo (`repo-status`/`repos`), TUI (`lg`), commits rápidos (`gcom`), checkout/switch (`gco`, `gcob`), ramas ordenadas (`gb`), deshacer (`gundo`), diff split (`vd`), visor de modificados (`vmod`), stash (`gss`, `gsl`, `gsp`) y auditorías con Antigravity (`agy-review-pr`). |
+| **`30-sql.ps1`** | **SQL Server Toolkit** | Motor ADO.NET (`q`), sesión persistente (`qconnect`, `qdisc`, `use`), exploración (`dbs`, `tables`, `views`, `top`, `desc`, `count`), búsqueda (`find-table`, `find-col`, `find-code`), monitor (`who`, `see`, `see-idx`), exportación (`q2excel`, `qclip`, `qfmt`), scratchpad (`vsql`) y autocompletado en consola (<kbd>Ctrl</kbd>+<kbd>Espacio</kbd>). |
+| **`40-utils.ps1`** | **Utilidades Generales** | Archivos (`touch`, `ff`, `head`, `tail`, `extract`), diagnóstico (`ports`, `kill-port`/`kp`, `psfind`, `myip`, `sysinfo`), portapapeles (`cb`), integración Neovim (`v`, `vrg`) y buscador de comandos de consola (`hist`). |
+| **`50-help.ps1`** | **Centro de Ayuda** | Guía de comandos agrupada por áreas (`phelp`, `phelp git`, `phelp sql`) y fichas técnicas detalladas con ejemplos (`phelp <comando>`). |
+| **`99-prompt.ps1`** | **Prompt Personalizado** | Muestra la ruta activa, el estado en vivo de Git vía `posh-git` y el badge de conexión persistente a SQL Server (`[BD ⚡]`). |
 
 ---
 
@@ -46,7 +47,7 @@ El perfil detecta automáticamente las herramientas instaladas y activa sus acel
   - `rsga` / `rsga2` / `rsga3`: Salta a las instancias locales del repositorio RSGA.
   - `profile`: Salta a la carpeta del perfil de PowerShell.
   - `notes`: Salta a la carpeta de notas personales.
-  - `ep` (alias `edit-profile`): Abre `Microsoft.PowerShell_profile.ps1` en Neovim.
+  - `ep [modulo]` (alias `edit-profile`): Abre `Microsoft.PowerShell_profile.ps1` o un módulo específico (ej. `ep sql`, `ep git`, `ep utils`) en Neovim.
   - `en` (alias `edit-nvim`): Abre la configuración de Neovim (`~\AppData\Local\nvim`).
 
 ---
