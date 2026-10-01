@@ -1,53 +1,21 @@
-# PowerShell Profile & Entorno Git / SQL
+# PowerShell Profile & Centro de Mando Developer
 
-Configuración personalizada de Windows PowerShell 5.1 (`Microsoft.PowerShell_profile.ps1`). Diseñada para aunar la potencia del paso de objetos y scripts de PowerShell con las comodidades habituales de un entorno Unix/Git (`sh`/`bash`/`zsh`): estado de repositorio en el prompt y autocompletado avanzado.
-
----
-
-## 🚀 Requisitos y Módulos Externos
-
-### 1. `posh-git` (Indispensable)
-Proporciona integración nativa de Git en PowerShell:
-- **Autocompletado con `<Tab>`**: Comandos de Git (`checkout`, `switch`, `merge`, `rebase`), ramas locales y remotas (`origin/<rama>`), tags, modificadores (`--amend`, `--no-verify`) y nombres de remotos.
-- **Estado en el Prompt**: Muestra la rama activa y el estado del árbol de trabajo en tiempo real:
-  - Formato: `[nombre-rama +A ~M -D !U]`
-    - `+A`: Archivos añadidos al índice (staged).
-    - `~M`: Archivos modificados (en índice o working directory).
-    - `-D`: Archivos eliminados.
-    - `!U`: Archivos no rastreados (*untracked*) o en conflicto.
-    - `↑N / ↓N`: Commits pendientes de subir (push) o bajar (pull) respecto al tracking remoto.
-
-#### Instalación (o configuración en un equipo nuevo):
-Ejecutar en una consola de PowerShell:
-```powershell
-# 1. Habilitar TLS 1.2 (requerido por PowerShell Gallery en PowerShell 5.1)
-[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-
-# 2. Instalar el módulo para el usuario actual
-Install-Module posh-git -Scope CurrentUser -Force
-```
-
-El perfil ya incluye la comprobación automática: si `posh-git` está instalado, se importa silenciosamente al iniciar la sesión.
+Configuración avanzada para Windows PowerShell 5.1 (`Microsoft.PowerShell_profile.ps1`). Convierte la consola en un centro de mando integral que aúna la velocidad del paso de objetos en .NET con la agilidad de los flujos de trabajo Unix, integrando **Git**, **Lazygit**, **Neovim**, **Ripgrep**, **SQL Server** y herramientas de diagnóstico de sistema y red.
 
 ---
 
-### 2. `PSReadLine` (Manejo de consola y autocompletado)
-Viene preinstalado por defecto en Windows PowerShell 5.1 (versión 2.0.0). Se encarga de la edición de línea de comandos, resaltado sintáctico y atajos de teclado.
+## 🚀 Requisitos y Herramientas del Entorno
 
-#### Mejoras opcionales recomendadas:
-Si deseas tener autocompletado predictivo tenue (estilo Fish Shell) y menú interactivo con flechas al pulsar `Tab` (estilo Zsh):
-```powershell
-# Actualizar a la versión más reciente (2.2+)
-Install-Module PSReadLine -Scope CurrentUser -Force -SkipPublisherCheck
-```
-Opciones recomendadas para añadir al perfil si se desea:
-```powershell
-# Menú seleccionable con Tab
-Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
+El perfil detecta automáticamente las herramientas instaladas y activa sus aceleradores:
 
-# Sugerencias predictivas basadas en el historial
-Set-PSReadLineOption -PredictionSource History
-```
+| Herramienta | Utilidad en el Perfil |
+| :--- | :--- |
+| **`posh-git`** | Estado del repo en el prompt (`[rama +A ~M -D !U]`) y autocompletado nativo con `<Tab>`. |
+| **`PSReadLine`** | Historial predictivo contextual (<kbd>↑</kbd>/<kbd>↓</kbd>) y edición visual con Neovim. |
+| **`Neovim` (`nvim`)** | Editor principal de Git, visor de diffs, visor de tuberías (`v`), quickfix de Ripgrep (`vrg`) y scratchpad SQL (`vsql`). |
+| **`Ripgrep` (`rg`)** | Búsqueda ultrarrápida de archivos (`ff`) y de texto con Quickfix (`vrg`). |
+| **`Lazygit` (`lg`)** | Interfaz TUI completa para Git directamente desde la terminal. |
+| **`7-Zip` (`7z`)** | Descompresor multiformato unificado (`extract`). |
 
 ---
 
@@ -55,63 +23,158 @@ Set-PSReadLineOption -PredictionSource History
 
 | Sección | Descripción |
 | :--- | :--- |
-| **0. Codificación** | Establece `UTF-8` en entrada, salida y consola. |
-| **1. Utilidades** | Funciones comunes como `cb` (portapapeles) y `kill-port` / `kp` (liberar puertos TCP). |
-| **2. Navegación** | Atajos a proyectos: `sga`, `rsga`, `rsga2`, `rsga3`, `profile`, `notes`. |
-| **3. Atajos de Git** | Integración de `posh-git` + atajos rápidos (`g`, `gs`, `ga`, `gp`, `gpush`, `gpsup`, `gco`, `glog`, `gss`, `gsl`, `gsp`, `agy-review-pr`). |
-| **4. Ayuda Rápida** | `phelp` o `?p` con filtro opcional (`phelp git`, `phelp sql`). |
-| **5. SQL Server Toolkit** | Conexión interactiva persistente, consultas (`q`, `q2excel`), descripciones (`desc`), explorador (`find-table`, `find-col`, `find-code`, `see`, `who`...). |
-| **6. Autocompletado SQL** | `Ctrl + Espacio` en PSReadLine para autocompletar tablas de SQL Server en caché. |
-| **7. Prompt Personalizado** | Muestra la ruta actual, el estado de Git (`posh-git`) y la sesión activa de SQL (`[BD ⚡]`). |
+| **0. Codificación** | Establece `UTF-8` en entrada, salida y consola. Asigna Neovim como editor global (`$env:EDITOR = 'nvim'`). |
+| **1. Utilidades Generales** | Archivos (`touch`, `ff`, `head`, `tail`, `extract`), diagnóstico (`ports`, `kill-port`/`kp`, `psfind`, `myip`, `sysinfo`), portapapeles (`cb`) e integración Neovim (`v`, `vrg`). |
+| **2. Navegación Rápida** | Subida de niveles (`..`, `...`, `....`), creación y entrada (`mkcd`), explorador (`open`/`o`), salto dinámico a proyectos (`proj`), recarga (`reload`/`rel`) y atajos a repositorios (`sga`, `rsga`, `rsga2`, `rsga3`, `ep`, `en`). |
+| **3. Atajos de Git & Lazygit** | TUI (`lg`), commits rápidos (`gcom`), checkout/switch (`gco`, `gcob`), ramas ordenadas (`gb`), deshacer (`gundo`), diff split (`vd`), visor de modificados (`vmod`), stash (`gss`, `gsl`, `gsp`) y auditorías con Antigravity (`agy-review-pr`). |
+| **4. Centro de Ayuda (`phelp`)** | Guía de comandos agrupada por áreas (`phelp`, `phelp git`, `phelp sql`) y fichas técnicas detalladas con ejemplos (`phelp <comando>`). |
+| **5. SQL Server Toolkit** | Motor ADO.NET (`q`), sesión persistente (`qconnect`, `qdisc`, `use`), exploración (`dbs`, `tables`, `views`, `top`, `desc`, `count`), búsqueda (`find-table`, `find-col`, `find-code`), monitor (`who`, `see`, `see-idx`), exportación (`q2excel`, `qclip`, `qfmt`) y scratchpad (`vsql`). |
+| **6. Consola & Autocompletado** | Autocompletado de tablas SQL en caché (<kbd>Ctrl</kbd>+<kbd>Espacio</kbd>), edición multilínea en Neovim (<kbd>Ctrl+X, Ctrl+E</kbd>), historial con flechas contextuales (<kbd>↑</kbd>/<kbd>↓</kbd>) y buscador de historial (`hist`). |
+| **7. Prompt Personalizado** | Muestra la ruta activa, el estado en vivo de Git vía `posh-git` y el badge de conexión persistente a SQL Server (`[BD ⚡]`). |
 
 ---
 
-## 💡 Atajos rápidos de Git y Ayuda
+## 🧭 1. Navegación Ágil y Gestión de Directorios
 
-Ejecuta en cualquier momento:
-```powershell
-phelp Git
-```
-Para ver todos los comandos de Git disponibles:
-- `g <args>`: Alias nativo a `git` con soporte total de autocompletado (`g sw<Tab>` -> `g switch`, `g switch <Tab>` -> ramas, remotos, flags).
-- `gco <rama>`: `git checkout <rama>` con autocompletado directo de ramas (`gco <Tab>` o `gco ma<Tab>`).
-- `posh-git`: Proporciona la rama actual y estado en el prompt y el autocompletado inteligente con `Tab`.
-- `gs`: `git status -sb`
-- `ga`: `git add .`
-- `gp` / `gf`: `git pull` / `git fetch`
-- `gpush`: `git push`
-- `gpsup` (o `gpu`): `git push --set-upstream origin <rama_actual>`
-- `glog`: Historial compacto gráfico de los últimos 10 commits.
-- `gss [mensaje]`: Guardar stash con timestamp y rama actual.
-- `gsl`: Listar stashes con colores y fechas relativas.
-- `gsp [idx]`: Aplicar y retirar stash.
-- `agy-review-pr`: Revisión de Pull Requests con Antigravity sin saltar de rama.
+- **`..` / `...` / `....`**: Sube 1, 2 o 3 niveles en el árbol de directorios sin teclear `cd ..\..`.
+- **`mkcd <carpeta>`**: Crea un directorio (incluyendo carpetas intermedias si faltan) y entra en él inmediatamente.
+- **`open [ruta]` (alias `o`)**: Abre el Explorador de Windows en la carpeta actual o en la ruta especificada.
+- **`proj [nombre]`**: Salto dinámico a cualquier subproyecto dentro de `Documentos\Proyectos` con autocompletado <kbd>Tab</kbd>. Si se ejecuta sin parámetros, lista los proyectos disponibles.
+- **`reload` (alias `rel`, `rprof`, `reload-profile`)**: Recarga el perfil en la consola actual con confirmación visual.
+- **Atajos directos de proyectos:**
+  - `sga`: Salta a `$HOME\Documentos\Proyectos\SGA`.
+  - `rsga` / `rsga2` / `rsga3`: Salta a las instancias locales del repositorio RSGA.
+  - `profile`: Salta a la carpeta del perfil de PowerShell.
+  - `notes`: Salta a la carpeta de notas personales.
+  - `ep` (alias `edit-profile`): Abre `Microsoft.PowerShell_profile.ps1` en Neovim.
+  - `en` (alias `edit-nvim`): Abre la configuración de Neovim (`~\AppData\Local\nvim`).
 
 ---
 
-## 🛠️ Utilidades y SQL Server Toolkit Destacados
+## 📄 2. Archivos, Búsqueda y Productividad Unix
 
-- **`kill-port <puerto>` (alias `kp`)**: Finaliza el proceso que retiene un puerto local (ej. `kp 4200` o `kp 5000, 7000`).
-- **`find-code <patrón>` (alias `find-sp`, `grep-sql`)**: Busca texto o nombres de tablas dentro de la definición de Procedimientos Almacenados, Vistas, Funciones y Triggers (soporta `-Grid`, `-Clip`, `-Csv`, `-Json`).
-- **`q2excel <consulta>` (alias `qexcel`)**: Ejecuta una consulta SQL y la abre directamente en Excel con delimitador de punto y coma `;` para formato español sin descuadre.
-- **`find-col <columna>`**: Busca en qué tablas y vistas de la base de datos existe una columna dada.
-- **`see <objeto>` / `open-sql <objeto>`**: Inspecciona el código DDL de una vista o SP en consola o directamente en Neovim.
-- **`q <consulta>`**: Ejecuta consultas ultrarrápidas con salvaguardas (switches: `-Grid`, `-Clip`, `-Csv`, `-Json`, `-DryRun`, `-Timeout N`).
+- **`touch <archivo...>`**: Crea archivos vacíos (o actualiza su timestamp si ya existen) al estilo Unix. Si la ruta incluye carpetas que no existen, las crea automáticamente.
+- **`ff <patrón> [ruta]`**: Búsqueda recursiva ultrarrápida de archivos por coincidencia de nombre usando `rg --files` (o fallback nativo .NET).
+- **`which <comando>`**: Muestra la ruta absoluta, tipo de comando (Cmdlet, Alias, Application) y versión de cualquier ejecutable.
+- **`head <archivo> [-n 10]`**: Muestra las primeras N líneas de un archivo o flujo sin cargarlo entero en memoria.
+- **`tail <archivo> [-n 10]`**: Muestra las últimas N líneas de un archivo o fichero de log.
+- **`extract <archivo> [destino]`**: Descompresor universal para `.zip`, `.tar.gz`, `.7z` o `.rar` utilizando `7z`, `tar` o `Expand-Archive`.
+- **`cb [texto] | <comando> | cb`**: Copia texto o cualquier objeto de la consola directamente al portapapeles de Windows.
 
 ---
 
-## ⚡ Integración con Neovim
+## 🌿 3. Git & Lazygit Superpowers
 
-El perfil convierte a Neovim en el editor central del flujo de trabajo:
+- **`lg`**: Lanza la interfaz gráfica interactiva de terminal de **Lazygit**.
+- **`repo-status` (alias `repos`, `sga-status`)**: Dashboard en tiempo real de tus entornos/clones Git de SGA (`RSGA`, `RSGA_2`, `RSGA_3`):
+  - Muestra rama activa, cambios locales pendientes (`+staged`, `~mod`, `!new` o `Limpio`), estado de sincronización con origin (`Al día`, `↑ N pendiente(s)`, `↓ N por bajar`) y el último commit con fecha relativa.
+  - **Salto rápido:** `repos 1` (salta a `RSGA`), `repos 2` (`RSGA_2`), `repos 3` (`RSGA_3`).
+  - **Refresco remoto:** `repos -f` (hace `git fetch` en los clones antes de evaluar para reflejar el estado de origin al instante).
+- **`gcom "<mensaje>"`**: Prepara todos los cambios (`git add -A`) y crea el commit en un solo paso rápido.
+- **`gcob <nueva-rama>` (alias `gswc`)**: Crea una nueva rama y cambia a ella de inmediato (`git checkout -b` / `git switch -c`).
+- **`gb`**: Lista las ramas locales ordenadas por fecha de último commit con indicador de tiempo relativo.
+- **`gundo`**: Deshace el último commit manteniendo todos los cambios en el árbol de trabajo y preparados en *staged* (`git reset --soft HEAD~1`).
+- **`vd [archivo]`**: Abre la comparación diff de Git de un archivo en Neovim con vista dividida en paralelo (`nvim -d`).
+- **`vmod` (alias `vdiff`)**: Muestra en consola la lista coloreada de cambios (`[Modificado]`, `[Nuevo]`, `[Staged]`) y los abre en Neovim en pestañas individuales con la lista Quickfix (`:copen`) activa abajo.
+  - `vmod -List` (o `-l`): Solo lista los cambios en consola sin abrir el editor.
+  - `vmod -Splits`: Abre los archivos en divisiones verticales en lugar de pestañas.
+- **Atajos clásicos:**
+  - `g <args>`: Alias universal a `git` con soporte total de autocompletado en `posh-git`.
+  - `gs`: `git status -sb`.
+  - `ga`: `git add .`.
+  - `gp` / `gf`: `git pull` / `git fetch`.
+  - `gpush`: `git push`.
+  - `gpsup` (alias `gpu`): `git push --set-upstream origin <rama_actual>`.
+  - `gco <rama>`: `git checkout <rama>` con autocompletado inteligente de ramas.
+  - `glog`: Historial compacto gráfico de los últimos 10 commits.
+  - `gss [msg]` / `gsl` / `gsp [idx]`: Guardar, listar y aplicar stashes con timestamps y rama activa.
+  - `agy-review-pr <rama> [base]`: Auditoría de Pull Requests con Antigravity sin saltar de rama.
 
-- **Editor predeterminado (`$env:EDITOR = 'nvim'`)**: Git (`commit`, `rebase -i`) y herramientas de consola utilizan Neovim automáticamente.
-- **`v [archivo]` o `<comando> | v`**: Wrapper inteligente. Si recibe argumentos abre el archivo (`v main.cs`); si recibe datos por tubería (`gs | v`, `q "SELECT..." | v`), vuelca la salida a un buffer temporal en Neovim y lo elimina al cerrar.
+---
+
+## 🖥️ 4. Diagnóstico de Sistema, Red y Procesos
+
+- **`ports [filtro]` (alias `listening`)**: Muestra todos los puertos TCP a la escucha en la máquina con su puerto, IP, PID y nombre del proceso asociado.
+- **`kill-port <puerto...>` (alias `kp`)**: Busca y finaliza los procesos que retienen uno o varios puertos locales (ej. `kp 4200` o `kp 5000, 7000`).
+- **`psfind <nombre>` (alias `psgrep`)**: Busca procesos en ejecución mostrando PID, memoria en MB y tiempo de CPU consumido.
+- **`myip`**: Muestra la dirección IP local de las interfaces activas y consulta la IP pública externa.
+- **`sysinfo`**: Muestra el tiempo de encendido (uptime) de Windows, uso de memoria RAM (usada/total/libre) y espacio libre en discos.
+
+---
+
+## 🗄️ 5. SQL Server Toolkit (ADO.NET)
+
+Motor de alto rendimiento conectado por defecto a la instancia local `PORT1220\SQL_SERVER`:
+
+### Conexión y Contexto
+- **`qconnect [servidor] [bd]`**: Abre una conexión persistente reutilizable de alto rendimiento (muestra `[BD ⚡]` en el prompt).
+- **`qdisc` (alias `qdisconnect`)**: Cierra la sesión persistente activa y vuelve al modo transitorio.
+- **`use <BaseDatos>`**: Cambia la base de datos activa al vuelo con autocompletado y refresca la caché de autocompletado.
+- **`dbs` (alias `show-dbs`)**: Lista todas las bases de datos de la instancia con su tamaño en MB, estado y modelo de recuperación.
+
+### Exploración y Búsqueda
+- **`tables [filtro]`**: Lista todas las tablas de la base de datos activa con recuento exacto de filas en 0 ms (vía DMVs de partición, sin `COUNT(*)` lento).
+- **`views [filtro]`**: Lista todas las vistas con su esquema, fecha de creación y última modificación.
+- **`top <tabla> [n]`**: Muestra rápidamente las primeras N filas (por defecto 20) de cualquier tabla o vista (soporta `-Grid`, `-Clip`, `-Json`).
+- **`desc <tabla>`**: Describe columnas, tipos de datos, nulabilidad y valores por defecto con autocompletado.
+- **`count <tabla>`**: Recuento instantáneo de filas usando particiones DMVs (`sys.dm_db_partition_stats`).
+- **`find-table <patrón>`**: Busca tablas y vistas por coincidencia en el nombre.
+- **`find-col <columna>`**: Encuentra en qué tablas y vistas existe una columna dada en toda la base de datos.
+- **`find-code <patrón>` (alias `find-sp`, `grep-sql`)**: Busca texto o nombres de tablas dentro del DDL de SPs, Vistas, Funciones y Triggers.
+
+### Monitorización y DDL
+- **`who [-Grid]`**: Monitor de sesiones activas de usuario, bloqueos entre procesos (*blocking SPID*) y consultas en ejecución.
+- **`see <objeto> [-Clip]`**: Extrae y muestra el código DDL de una vista, SP, función o trigger en consola.
+- **`see-idx <tabla>`**: Inspecciona los índices definidos, tipo (Clustered/Nonclustered) y columnas clave.
+- **`open-sql <objeto>`**: Extrae el DDL de un objeto y lo abre en Neovim listo para inspeccionar o editar.
+- **`vsql`**: Abre un scratchpad SQL temporal en Neovim con contexto de la BD activa y pregunta si deseas ejecutarlo con `q` al guardar y salir (`:wq`).
+
+### Ejecución y Exportación
+- **`q <query/.sql>`**: Ejecuta consultas ultrarrápidas o scripts `.sql` con salvaguardas:
+  - `-Grid`: Muestra los resultados en una ventana gráfica interactiva de `Out-GridView`.
+  - `-Clip`: Copia los resultados tabulados al portapapeles listos para pegar en Excel (<kbd>Ctrl+V</kbd>).
+  - `-Csv <ruta>`: Exporta directamente a archivo delimitado por punto y coma `;`.
+  - `-Json`: Convierte los resultados a JSON formateado.
+  - `-DryRun`: Envoltorio de simulación de cambios con `ROLLBACK TRANSACTION` automático.
+  - `-Timeout <segundos>`: Configura el tiempo límite de ejecución (por defecto 120 s).
+- **`qclip <query/.sql>`**: Ejecuta la consulta y envía directamente los resultados tabulados al portapapeles.
+- **`q2excel <query/.sql>` (alias `qexcel`)**: Ejecuta una consulta SQL y abre el resultado directamente en Excel en formato español.
+- **`qfmt <query> [-Clip]`**: Formatea e indenta una consulta SQL desordenada para mayor legibilidad.
+- **`qlog [filtro] [-Last 20]`**: Consulta el historial persistente de sentencias SQL ejecutadas en `$HOME\.sql_history.tsv`.
+
+---
+
+## ⚡ 6. Integración con Neovim & Consola Interactiva
+
+- **`v [archivo]` o `<comando> | v`**: Wrapper inteligente. Abre archivos o captura la salida por tubería (`gs | v`, `q "SELECT..." | v`) en un buffer temporal de Neovim.
 - **`vrg <patrón> [ruta]`**: Ejecuta Ripgrep y abre automáticamente Neovim cargando los resultados en la lista **Quickfix** (`:copen`), saltando al primer resultado.
-- **`vmod` (alias `vdiff`)**: Muestra en consola la lista coloreada de cambios (`[Modificado]`, `[Nuevo]`, `[Staged]`) y los abre en Neovim en pestañas individuales con la lista Quickfix (`:copen`) activa abajo. Soporta `-List` (o `-l`) para solo ver la lista sin abrir el editor, y `-Splits` para divisiones verticales.
-- **`vsql`**: Abre un scratchpad SQL temporal con sintaxis resaltada y contexto de la BD actual. Al guardar y salir (`:wq`), pregunta si deseas ejecutarlo directamente con `q`.
-- **`ep` (alias `edit-profile`)**: Abre `Microsoft.PowerShell_profile.ps1` en Neovim.
-- **`en` (alias `edit-nvim`)**: Abre la carpeta de configuración de Neovim (`~\AppData\Local\nvim`).
-- **<kbd>Ctrl</kbd>+<kbd>X</kbd>, <kbd>Ctrl</kbd>+<kbd>E</kbd>**: Edita el comando que estés escribiendo en la consola dentro de una ventana de Neovim y lo devuelve al prompt listo para ejecutar.
+- **<kbd>Ctrl+X, Ctrl+E</kbd>**: Edita la línea de comandos actual dentro de una ventana completa de Neovim y la devuelve al prompt lista para ejecutar.
+- **<kbd>Ctrl + Espacio</kbd>**: Autocompletado predictivo inteligente de nombres de tablas y vistas de SQL Server en la consola.
+- **Historial Contextual (<kbd>↑</kbd> / <kbd>↓</kbd>)**: Escribe un prefijo (ej. `git ` o `q `) y pulsa la flecha arriba para buscar únicamente comandos que coincidan con lo ya escrito.
+- **`hist [filtro]`**: Búsqueda rápida por texto dentro del historial de la sesión de PowerShell.
+
+---
+
+## 💡 7. Sistema de Ayuda Enriquecido (`phelp`)
+
+El perfil incluye un centro de ayuda dinámico con dos niveles de inspección:
+
+### 1. Vista por Categorías o Filtro Amplio
+```powershell
+phelp          # Muestra todos los comandos organizados por áreas con sintaxis y descripción
+phelp git      # Filtra todos los comandos de Git & Lazygit
+phelp sql      # Filtra el kit de herramientas de SQL Server
+phelp red      # Filtra utilidades de red y diagnóstico
+```
+
+### 2. Fichas Técnicas Detalladas con Ejemplos
+Si se consulta un comando concreto por su nombre, `phelp` genera una ficha técnica con su sintaxis completa, categoría, descripción expandida y ejemplos reales de uso:
+```powershell
+phelp q
+phelp vmod
+phelp top
+phelp ports
+```
 
 ---
 
@@ -121,4 +184,4 @@ Windows PowerShell 5.1 requiere estrictamente:
 - **Codificación**: `UTF-8 con BOM` (Byte Order Mark: bytes `0xEF, 0xBB, 0xBF`).
 - **Saltos de línea**: `CRLF` (`\r\n`).
 
-> **Nota:** Si se edita este perfil con un editor que guarde en UTF-8 sin BOM (UTF-8 puro), PowerShell 5.1 lo interpretará como codificación ANSI (Windows-1252), provocando errores sintácticos o corrupción de caracteres especiales y emojis como `⚡`.
+> **Nota:** Si se edita este perfil con un editor que guarde en UTF-8 sin BOM, PowerShell 5.1 lo interpretará en codificación ANSI (Windows-1252), provocando errores sintácticos o corrupción de caracteres especiales y emojis como `⚡`.

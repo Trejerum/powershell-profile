@@ -178,8 +178,281 @@ function vrg {
     }
 }
 
+# Crea archivos vacíos o actualiza la fecha de modificación (estilo Unix)
+function touch {
+    <#
+    .SYNOPSIS
+        Crea archivos vacíos o actualiza la fecha de modificación al estilo Unix.
+    .EXAMPLE
+        touch script.ps1
+        touch note1.txt note2.txt
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromRemainingArguments = $true)]
+        [string[]]$Path
+    )
+    process {
+        foreach ($p in $Path) {
+            if (Test-Path -LiteralPath $p) {
+                (Get-Item -LiteralPath $p).LastWriteTime = [DateTime]::Now
+            }
+            else {
+                $parent = Split-Path -Parent $p
+                if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+                    [void](New-Item -ItemType Directory -Path $parent -Force)
+                }
+                [void](New-Item -ItemType File -Path $p -Force)
+            }
+        }
+    }
+}
+
+# Búsqueda ultrarrápida de archivos por nombre recursivamente (usando Ripgrep si existe)
+function ff {
+    <#
+    .SYNOPSIS
+        Busca archivos por nombre recursivamente usando Ripgrep o fallback nativo.
+    .EXAMPLE
+        ff "Controller"
+        ff "*.sql" database/
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Pattern,
+
+        [Parameter(Position = 1)]
+        [string]$Path = "."
+    )
+    if (Get-Command rg -ErrorAction SilentlyContinue) {
+        rg --files $Path 2>$null | Select-String -Pattern $Pattern -SimpleMatch | ForEach-Object { $_.Line }
+    }
+    else {
+        Get-ChildItem -Path $Path -Recurse -Filter "*$Pattern*" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+    }
+}
+
+# Muestra la ruta real, tipo y origen de un comando o ejecutable
+function which {
+    <#
+    .SYNOPSIS
+        Muestra la ruta real, tipo y origen de un comando, función o ejecutable.
+    .EXAMPLE
+        which nvim
+        which git
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Name
+    )
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        Write-Host "● No se encontró el comando o ejecutable: '$Name'" -ForegroundColor Yellow
+        return
+    }
+    $cmd | Select-Object Name, CommandType, @{Name='Origen/Ruta'; Expression={ if ($_.Source) { $_.Source } elseif ($_.Definition) { $_.Definition } else { "N/A" } }}, Version | Format-Table -AutoSize
+}
+
+# Muestra las primeras líneas de un archivo o flujo
+function head {
+    <#
+    .SYNOPSIS
+        Muestra las primeras N líneas de un archivo o entrada de tubería.
+    .EXAMPLE
+        head error.log
+        head error.log -n 25
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        $Path,
+
+        [Parameter(Position = 1)]
+        [Alias('n')]
+        [int]$Count = 10
+    )
+    process {
+        if ($Path -is [string] -and (Test-Path -LiteralPath $Path)) {
+            Get-Content -LiteralPath $Path -TotalCount $Count
+        } else {
+            $Path | Select-Object -First $Count
+        }
+    }
+}
+
+# Muestra las últimas líneas de un archivo o flujo
+function tail {
+    <#
+    .SYNOPSIS
+        Muestra las últimas N líneas de un archivo o entrada de tubería.
+    .EXAMPLE
+        tail error.log
+        tail error.log -n 30
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        $Path,
+
+        [Parameter(Position = 1)]
+        [Alias('n')]
+        [int]$Count = 10
+    )
+    process {
+        if ($Path -is [string] -and (Test-Path -LiteralPath $Path)) {
+            Get-Content -LiteralPath $Path -Tail $Count
+        } else {
+            $Path | Select-Object -Last $Count
+        }
+    }
+}
+
+# Descompresor universal para .zip, .tar.gz, .7z, .rar
+function extract {
+    <#
+    .SYNOPSIS
+        Descomprime archivos (.zip, .tar.gz, .7z, .rar) en la carpeta indicada.
+    .EXAMPLE
+        extract release.zip
+        extract backup.7z ./destino
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Archive,
+
+        [Parameter(Position = 1)]
+        [string]$Destination = "."
+    )
+    if (-not (Test-Path -LiteralPath $Archive)) {
+        Write-Error "No se encontró el archivo: $Archive"
+        return
+    }
+    $resolved = (Resolve-Path -LiteralPath $Archive).ProviderPath
+    if (Get-Command 7z -ErrorAction SilentlyContinue) {
+        7z x $resolved -o"$Destination"
+    }
+    elseif ($resolved.EndsWith(".zip", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Expand-Archive -LiteralPath $resolved -DestinationPath $Destination -Force
+    }
+    elseif (Get-Command tar -ErrorAction SilentlyContinue) {
+        tar -xf $resolved -C $Destination
+    }
+    else {
+        Write-Error "No se encontró 7z, tar ni Expand-Archive para procesar '$resolved'."
+    }
+}
+
+# Lista los puertos TCP locales que están a la escucha
+function ports {
+    <#
+    .SYNOPSIS
+        Muestra todos los puertos TCP locales en escucha con su PID y nombre de proceso.
+    .EXAMPLE
+        ports
+        ports 4200
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Filter
+    )
+    $conns = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue
+    if (-not $conns) {
+        Write-Host "● No se detectaron conexiones en escucha." -ForegroundColor DarkGray
+        return
+    }
+    $results = @(foreach ($c in ($conns | Sort-Object -Property LocalPort)) {
+        $pidVal = $c.OwningProcess
+        $pName = if ($pidVal -le 4) { "System" } else {
+            $proc = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
+            if ($proc) { $proc.ProcessName } else { "Desconocido" }
+        }
+        [PSCustomObject]@{
+            Puerto  = $c.LocalPort
+            IP      = $c.LocalAddress
+            PID     = $pidVal
+            Proceso = $pName
+        }
+    })
+    if ($Filter) {
+        $results = $results | Where-Object { $_.Puerto -like "*$Filter*" -or $_.Proceso -like "*$Filter*" }
+    }
+    $results | Format-Table -AutoSize
+}
+Set-Alias listening ports
+
+# Busca procesos en ejecución con consumo de RAM y CPU
+function psfind {
+    <#
+    .SYNOPSIS
+        Busca procesos en ejecución mostrando PID, memoria en MB y CPU.
+    .EXAMPLE
+        psfind node
+        psfind sql
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Name
+    )
+    Get-Process | Where-Object { $_.ProcessName -like "*$Name*" } |
+        Select-Object Id, ProcessName, @{Name='RAM (MB)'; Expression={[Math]::Round($_.WorkingSet64 / 1MB, 1)}}, @{Name='CPU (s)'; Expression={[Math]::Round($_.CPU, 1)}}, Responding |
+        Format-Table -AutoSize
+}
+Set-Alias psgrep psfind
+
+# Muestra la IP local activa y la IP pública
+function myip {
+    <#
+    .SYNOPSIS
+        Muestra la dirección IP local de las tarjetas de red activas y la IP pública externa.
+    #>
+    [CmdletBinding()]
+    param()
+
+    Write-Host "--- Red Local ---" -ForegroundColor Cyan
+    Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Wi-Fi*', 'Ethernet*', 'vEthernet*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike "169.254*" -and $_.IPAddress -ne "127.0.0.1" } |
+        Select-Object InterfaceAlias, IPAddress, IPv4Address | Format-Table -AutoSize
+
+    Write-Host "--- IP Pública ---" -ForegroundColor Cyan
+    try {
+        $pub = (Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 3).Trim()
+        Write-Host "IP Externa: $pub" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "No se pudo obtener la IP pública (sin conexión o timeout)." -ForegroundColor Yellow
+    }
+}
+
+# Resumen rápido del estado del equipo (uptime, memoria, discos)
+function sysinfo {
+    <#
+    .SYNOPSIS
+        Muestra un resumen de uptime del sistema, uso de memoria RAM y espacio disponible en discos.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $os = Get-CimInstance Win32_OperatingSystem
+    $uptime = (Get-Date) - $os.LastBootUpTime
+    $totalRamGB = [Math]::Round($os.TotalVisibleMemorySize / 1MB, 2)
+    $freeRamGB  = [Math]::Round($os.FreePhysicalMemory / 1MB, 2)
+    $usedRamGB  = [Math]::Round($totalRamGB - $freeRamGB, 2)
+    $drives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Free -gt 0 }
+
+    Write-Host "`n=== Sistema & Recursos ===" -ForegroundColor DarkCyan
+    Write-Host ("Uptime: " + [int]$uptime.TotalDays + "d " + $uptime.Hours + "h " + $uptime.Minutes + "m") -ForegroundColor White
+    Write-Host "RAM:    $usedRamGB GB usados / $totalRamGB GB totales ($freeRamGB GB libres)" -ForegroundColor White
+    Write-Host "`n--- Espacio en Disco ---" -ForegroundColor Cyan
+    $drives | Select-Object Name, @{Name='Usado (GB)'; Expression={[Math]::Round(($_.Used / 1GB), 1)}}, @{Name='Libre (GB)'; Expression={[Math]::Round(($_.Free / 1GB), 1)}}, @{Name='Total (GB)'; Expression={[Math]::Round((($_.Used + $_.Free) / 1GB), 1)}} | Format-Table -AutoSize
+}
+
 # ==============================================================================
-# 2. NAVEGACIÓN RÁPIDA (PROYECTOS)
+# 2. NAVEGACIÓN RÁPIDA (PROYECTOS & ENTORNO)
 # ==============================================================================
 
 $script:SgaRoot = Join-Path $HOME "Documentos\Proyectos\SGA"
@@ -194,6 +467,99 @@ function ep      { nvim $PROFILE }
 function en      { nvim (Join-Path $env:LOCALAPPDATA "nvim") }
 Set-Alias edit-profile ep
 Set-Alias edit-nvim    en
+
+# Subir niveles de directorio rápidamente
+function ..   { Set-Location .. }
+function ...  { Set-Location ..\.. }
+function .... { Set-Location ..\..\.. }
+
+# Crear directorio y entrar inmediatamente
+function mkcd {
+    <#
+    .SYNOPSIS
+        Crea una carpeta (y sus directorios padres si no existen) y navega a ella de inmediato.
+    .EXAMPLE
+        mkcd backend/api/v2
+    #>
+    param([Parameter(Mandatory = $true, Position = 0)][string]$Path)
+    [void](New-Item -ItemType Directory -Path $Path -Force)
+    Set-Location $Path
+}
+
+# Abrir explorador de archivos en la ruta actual o indicada
+function open {
+    <#
+    .SYNOPSIS
+        Abre el Explorador de archivos de Windows en la carpeta actual o en la ruta indicada.
+    .EXAMPLE
+        open
+        open ./logs
+    #>
+    param([Parameter(Position = 0)][string]$Path = ".")
+    Invoke-Item $Path
+}
+Set-Alias o open
+
+# Salto dinámico a cualquier subproyecto dentro de Documentos\Proyectos con autocompletado
+function proj {
+    <#
+    .SYNOPSIS
+        Navega dinámicamente a cualquier subproyecto dentro de Documentos\Proyectos.
+    .EXAMPLE
+        proj
+        proj RSGA
+        proj CINFA
+    #>
+    param(
+        [Parameter(Position = 0)]
+        [string]$Name
+    )
+    $projDir = Join-Path $HOME "Documentos\Proyectos"
+    if (-not (Test-Path -LiteralPath $projDir)) {
+        Write-Warning "El directorio '$projDir' no existe."
+        return
+    }
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        Write-Host "Proyectos disponibles en $projDir`:" -ForegroundColor DarkCyan
+        Get-ChildItem -LiteralPath $projDir -Directory | Select-Object -ExpandProperty Name | ForEach-Object {
+            Write-Host "  • $_" -ForegroundColor White
+        }
+        return
+    }
+    $target = Join-Path $projDir $Name
+    if (Test-Path -LiteralPath $target) {
+        Set-Location $target
+    } else {
+        $match = Get-ChildItem -LiteralPath $projDir -Directory | Where-Object { $_.Name -like "*$Name*" } | Select-Object -First 1
+        if ($match) {
+            Set-Location $match.FullName
+        } else {
+            Write-Host "● No se encontró ningún proyecto que coincida con '$Name' en $projDir" -ForegroundColor Yellow
+        }
+    }
+}
+Register-ArgumentCompleter -CommandName proj -ParameterName Name -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    $projDir = Join-Path $HOME "Documentos\Proyectos"
+    if (Test-Path -LiteralPath $projDir) {
+        Get-ChildItem -LiteralPath $projDir -Directory |
+            Where-Object { $_.Name -like "$wordToComplete*" } |
+            ForEach-Object { [System.Management.Automation.CompletionResult]::new($_.Name, $_.Name, 'ParameterValue', "Proyecto: $($_.Name)") }
+    }
+}
+
+# Recargar el perfil de PowerShell en la sesión actual
+function reload {
+    <#
+    .SYNOPSIS
+        Recarga el perfil activo de PowerShell en la consola actual.
+    #>
+    . $PROFILE
+    Write-Host "✓ Perfil de PowerShell recargado correctamente." -ForegroundColor Green
+}
+Set-Alias rel reload
+Set-Alias rprof reload
+Set-Alias reload-profile reload
 
 # ==============================================================================
 # 3. ATAJOS DE GIT
@@ -422,91 +788,382 @@ function vmod {
 }
 Set-Alias vdiff vmod
 
-# ==============================================================================
-# 4. AYUDA RÁPIDA DEL PERFIL
-# ==============================================================================
+# Interfaz TUI interactiva de Lazygit
+if (Get-Command lazygit -ErrorAction SilentlyContinue) {
+    Set-Alias lg lazygit
+}
 
-function Show-ProfileHelp {
+# Añadir todo y crear commit en un único paso
+function gcom {
+    <#
+    .SYNOPSIS
+        Prepara todos los cambios (git add -A) y realiza el commit con el mensaje indicado.
+    .EXAMPLE
+        gcom "feat: implementar nuevo endpoint de clientes"
+    #>
     [CmdletBinding()]
-    param([string]$Filter)
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Message
+    )
+    git add -A
+    git commit -m $Message
+}
 
-    $commands = @(
-        # Navegación
-        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "sga";   Descripcion = "Ir a la raíz de SGA" }
-        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "rsga";  Descripcion = "Ir a RSGA" }
-        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "rsga2"; Descripcion = "Ir a RSGA_2" }
-        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "rsga3";   Descripcion = "Ir a RSGA_3" }
-        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "profile"; Descripcion = "Ir a la carpeta del perfil de PowerShell" }
-        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "notes";   Descripcion = "Ir a la carpeta de Notas" }
-        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "ep";      Descripcion = "Abre `$PROFILE en Neovim (alias: edit-profile)" }
-        [PSCustomObject]@{ Categoria = "Navegación"; Comando = "en";      Descripcion = "Abre config de Neovim en Neovim (alias: edit-nvim)" }
+# Crear una nueva rama y posicionarse en ella inmediatamente
+function gcob {
+    <#
+    .SYNOPSIS
+        Crea y cambia a una nueva rama de Git (git checkout -b / git switch -c).
+    .EXAMPLE
+        gcob feature/auth-jwt
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Branch
+    )
+    git checkout -b $Branch
+}
+Set-Alias gswc gcob
 
-        # Utilidades
-        [PSCustomObject]@{ Categoria = "General";    Comando = "v";         Descripcion = "Wrapper Neovim: abre archivo o consume pipeline (<salida> | v)" }
-        [PSCustomObject]@{ Categoria = "General";    Comando = "vrg";       Descripcion = "Busca con Ripgrep y abre resultados en Neovim Quickfix" }
-        [PSCustomObject]@{ Categoria = "General";    Comando = "cb";        Descripcion = "Copia texto o pipeline al portapapeles" }
-        [PSCustomObject]@{ Categoria = "General";    Comando = "kill-port"; Descripcion = "Libera puertos TCP bloqueados (alias: kp, ej. kp 4200)" }
+# Listar ramas locales ordenadas por fecha de último commit con tiempo relativo
+function gb {
+    <#
+    .SYNOPSIS
+        Lista ramas locales ordenadas por fecha de actividad reciente.
+    #>
+    git branch --sort=-committerdate --format="%(color:yellow)%(refname:short)%(color:reset) %(color:cyan)(%(committerdate:relative))%(color:reset) - %(subject)"
+}
 
-        # Atajos Git
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "g";            Descripcion = "Atajo directo a 'git'" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "posh-git";     Descripcion = "Autocompletado git con <Tab> y estado en prompt [rama +~-]" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gs";           Descripcion = "git status -sb" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "ga";    Descripcion = "git add ." }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gp/gf"; Descripcion = "git pull / git fetch" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gpush"; Descripcion = "git push" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gpsup"; Descripcion = "git push --set-upstream origin <rama> (alias: gpu, gpushu)" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gco";   Descripcion = "git checkout <rama/archivo>" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "glog";  Descripcion = "Historial gráfico compacto (últimos 10)" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gme";   Descripcion = "Commits remotos de Diego Corral" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gss";   Descripcion = "Stash con timestamp y rama (incluye untracked)" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gsl";   Descripcion = "Listar stashes coloreados" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "gsp";           Descripcion = "Aplicar stash (ej. 'gsp' o 'gsp 2')" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "vmod";          Descripcion = "Lista cambios y abre modificados en Neovim (alias: vdiff, -List, -Splits)" }
-        [PSCustomObject]@{ Categoria = "Git";        Comando = "agy-review-pr"; Descripcion = "Revisa PR con Antigravity (ej. agy-review-pr <rama> [base] [-Print])" }
+# Deshacer el último commit manteniendo todos los cambios en el árbol de trabajo (soft reset)
+function gundo {
+    <#
+    .SYNOPSIS
+        Deshace el último commit pero conserva los cambios preparados (staged) en el árbol de trabajo.
+    #>
+    git reset --soft HEAD~1
+    Write-Host "✓ Último commit deshecho (los cambios siguen en el área de preparación/staged)." -ForegroundColor Green
+}
 
-        # SQL Server Toolkit
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q";          Descripcion = "Ejecuta SQL/.sql (switches: -Grid, -Clip, -Csv, -Json, -DryRun, -Timeout N)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect";   Descripcion = "Conecta sesión persistente en BD (ej. qconnect [Serv] [BD])" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc";      Descripcion = "Desconecta sesión persistente (alias de qdisconnect)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "use";        Descripcion = "Cambia BD activa y refresca caché (ej. use <BD>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "desc";       Descripcion = "Describe columnas y tipos de una tabla (ej. desc <tabla>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-table"; Descripcion = "Busca tablas/vistas por patrón (ej. find-table <patrón>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "count";      Descripcion = "Recuento ultrarrápido sin scan (sys.dm_db_partition_stats)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who";        Descripcion = "Monitor de sesiones activas y bloqueos (sys.dm_exec_requests)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see";        Descripcion = "Inspecciona DDL/código de vista/SP/función (ej. see <objeto> [-Clip])" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see-idx";    Descripcion = "Inspecciona índices y columnas clave (ej. see-idx <tabla>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-col";   Descripcion = "Busca en qué tablas existe una columna (ej. find-col <col>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-code";  Descripcion = "Busca texto en SPs, vistas, funciones y triggers (alias: find-sp)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q2excel";    Descripcion = "Ejecuta consulta SQL y la abre directamente en Excel (alias: qexcel)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "open-sql";   Descripcion = "Abre DDL de SP/vista directamente en Neovim (ej. open-sql <obj>)" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "vsql";       Descripcion = "Scratchpad SQL en Neovim con opción de ejecución con 'q'" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qfmt";       Descripcion = "Formatea consulta SQL con indentaciones (ej. qfmt <query> [-Clip])" }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog";       Descripcion = "Historial persistente de consultas (ej. qlog [filtro] [-Last 20])" }
+# Comparar diferencias de un archivo en Neovim con vista split (:diffsplit)
+function vd {
+    <#
+    .SYNOPSIS
+        Abre el diff de un archivo en Neovim con vista paralela split (:diffsplit).
+    .EXAMPLE
+        vd Program.cs
+        vd
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$File
+    )
+    if ($File) {
+        nvim -d $File
+    } else {
+        git difftool -t nvimdiff -y
+    }
+}
+
+# Dashboard multi-entorno para repositorios SGA (RSGA, RSGA_2, RSGA_3) con salto rápido
+function repo-status {
+    <#
+    .SYNOPSIS
+        Muestra un dashboard en tiempo real de los entornos/clones Git de SGA con soporte de salto rápido.
+    .EXAMPLE
+        repos           # Muestra el estado de todos los clones
+        repos -Fetch    # Hace git fetch silencioso antes de evaluar (alias: -f)
+        repos 1         # Salta a RSGA
+        repos 2         # Salta a RSGA_2
+        repos 3         # Salta a RSGA_3
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Target,
+
+        [Alias('f')]
+        [switch]$Fetch,
+
+        [Parameter()]
+        [string]$Path = $script:SgaRoot
     )
 
-    if ($Filter) {
-        $commands = $commands | Where-Object {
-            $_.Comando -like "*$Filter*" -or $_.Descripcion -like "*$Filter*" -or $_.Categoria -like "*$Filter*"
+    # 1. Soporte de salto directo si se pasa un identificador
+    if ($Target) {
+        $cleanTarget = $Target.Trim().ToLower()
+        switch ($cleanTarget) {
+            { $_ -in @('1', 'rsga', 'sga') } {
+                rsga
+                Write-Host "● Posicionado en [RSGA]" -ForegroundColor Green
+                return
+            }
+            { $_ -in @('2', 'rsga2', 'rsga_2') } {
+                rsga2
+                Write-Host "● Posicionado en [RSGA_2]" -ForegroundColor Green
+                return
+            }
+            { $_ -in @('3', 'rsga3', 'rsga_3') } {
+                rsga3
+                Write-Host "● Posicionado en [RSGA_3]" -ForegroundColor Green
+                return
+            }
         }
     }
 
-    Write-Host "`n=== Comandos del `$PROFILE ===`n" -ForegroundColor DarkCyan
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Warning "El directorio '$Path' no existe."
+        return
+    }
+
+    $dirs = @(Get-ChildItem -LiteralPath $Path -Directory | Where-Object { Test-Path (Join-Path $_.FullName '.git') })
+    if ($dirs.Count -eq 0) {
+        Write-Host "● No se encontraron repositorios Git en $Path." -ForegroundColor Yellow
+        return
+    }
+
+    if ($Fetch) {
+        Write-Host "Sincronizando estado remoto (git fetch)..." -ForegroundColor DarkGray
+        foreach ($d in $dirs) {
+            git -C $d.FullName fetch -q 2>$null
+        }
+    }
+
+    Write-Host "`n=== Estado de Entornos SGA ===`n" -ForegroundColor DarkCyan
+
+    $idx = 1
+    foreach ($d in $dirs) {
+        $p = $d.FullName
+        $branch = (git -C $p branch --show-current 2>$null)
+        if (-not $branch) { $branch = 'DETACHED' }
+
+        $statusLines = @(git -C $p status --porcelain 2>$null)
+        $staged = @($statusLines | Where-Object { $_ -match '^[MADRC]' }).Count
+        $modified = @($statusLines | Where-Object { $_ -match '^.[MD]' }).Count
+        $untracked = @($statusLines | Where-Object { $_ -match '^\?\?' }).Count
+
+        $statusParts = @()
+        if ($staged -gt 0)    { $statusParts += "+$staged staged" }
+        if ($modified -gt 0)  { $statusParts += "~$modified mod" }
+        if ($untracked -gt 0) { $statusParts += "!$untracked new" }
+
+        $localStatus = if ($statusParts.Count -gt 0) { $statusParts -join ', ' } else { 'Limpio' }
+        $localColor  = if ($statusParts.Count -gt 0) { 'Yellow' } else { 'Green' }
+
+        $upstreamCounts = (git -C $p rev-list --left-right --count 'HEAD...@{upstream}' 2>$null)
+        $syncStatus = 'Sin tracking'
+        $syncColor = 'DarkGray'
+        if ($upstreamCounts) {
+            $parts = $upstreamCounts.Trim().Split([char]9)
+            if ($parts.Count -ge 2) {
+                $ahead = [int]$parts[0]
+                $behind = [int]$parts[1]
+                if ($ahead -eq 0 -and $behind -eq 0) {
+                    $syncStatus = 'Al día'
+                    $syncColor = 'Green'
+                } elseif ($ahead -gt 0 -and $behind -eq 0) {
+                    $syncStatus = "↑ $ahead pendiente(s)"
+                    $syncColor = 'Cyan'
+                } elseif ($ahead -eq 0 -and $behind -gt 0) {
+                    $syncStatus = "↓ $behind por bajar"
+                    $syncColor = 'Magenta'
+                } else {
+                    $syncStatus = "↑ $ahead ↓ $behind (divergente)"
+                    $syncColor = 'Red'
+                }
+            }
+        }
+
+        $lastCommit = (git -C $p log -1 --format='%h (%cr) %s' 2>$null)
+        if ($lastCommit -and $lastCommit.Length -gt 60) {
+            $lastCommit = $lastCommit.Substring(0, 57) + '...'
+        }
+
+        $tag = "[$idx] $($d.Name)".PadRight(12)
+        Write-Host $tag -ForegroundColor Yellow -NoNewline
+        Write-Host (" " + $branch).PadRight(32) -ForegroundColor Cyan -NoNewline
+        Write-Host " | " -ForegroundColor DarkGray -NoNewline
+        Write-Host $localStatus.PadRight(18) -ForegroundColor $localColor -NoNewline
+        Write-Host " | " -ForegroundColor DarkGray -NoNewline
+        Write-Host $syncStatus -ForegroundColor $syncColor
+        if ($lastCommit) {
+            Write-Host "     └─ $lastCommit" -ForegroundColor DarkGray
+        }
+
+        $idx++
+    }
+
+    Write-Host "`nTip: Usa 'repos <1|2|3>' para saltar directamente al clon deseado o '-f' para refrescar origin.`n" -ForegroundColor DarkGray
+}
+Set-Alias repos repo-status
+Set-Alias sga-status repo-status
+
+# ==============================================================================
+# 4. AYUDA RÁPIDA DEL PERFIL (CENTRO DE MANDO)
+# ==============================================================================
+
+function Show-ProfileHelp {
+    <#
+    .SYNOPSIS
+        Muestra la guía completa de atajos y herramientas del perfil con filtros y fichas de detalle.
+    .EXAMPLE
+        phelp
+        phelp git
+        phelp sql
+        phelp q
+        phelp vmod
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Filter
+    )
+
+    $commands = @(
+        # 1. Navegación & Entorno
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "sga"; Sintaxis = "sga"; Detalle = "Navega a la raíz del proyecto SGA (`$HOME\Documentos\Proyectos\SGA)"; Ejemplos = @("sga") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "rsga"; Sintaxis = "rsga"; Detalle = "Navega al repositorio principal RSGA"; Ejemplos = @("rsga") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "rsga2"; Sintaxis = "rsga2"; Detalle = "Navega al entorno o copia secundaria RSGA_2"; Ejemplos = @("rsga2") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "rsga3"; Sintaxis = "rsga3"; Detalle = "Navega al entorno o copia terciaria RSGA_3"; Ejemplos = @("rsga3") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "proj"; Sintaxis = "proj [nombre]"; Detalle = "Navega a cualquier subproyecto en Documentos\Proyectos con autocompletado <Tab> (sin argumentos lista proyectos)"; Ejemplos = @("proj", "proj RSGA", "proj CINFA") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "profile"; Sintaxis = "profile"; Detalle = "Navega a la carpeta física del perfil de PowerShell"; Ejemplos = @("profile") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "notes"; Sintaxis = "notes"; Detalle = "Navega a la carpeta de notas personales (`$HOME\Documentos\Notes)"; Ejemplos = @("notes") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = ".."; Sintaxis = "..  |  ...  |  ...."; Detalle = "Sube 1, 2 o 3 niveles de directorio en el árbol del sistema de archivos"; Ejemplos = @("..", "...", "....") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "mkcd"; Sintaxis = "mkcd <carpeta>"; Detalle = "Crea un directorio (incluyendo padres si no existen) y navega dentro de él de inmediato"; Ejemplos = @("mkcd backend/api/v2") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "open"; Sintaxis = "open [ruta]"; Detalle = "Abre la carpeta actual o la ruta indicada en el Explorador de archivos de Windows (alias: o)"; Ejemplos = @("open", "open .", "open ./logs") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "reload"; Sintaxis = "reload"; Detalle = "Recarga el perfil de PowerShell en la consola activa (alias: rel, rprof, reload-profile)"; Ejemplos = @("reload", "rel") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "ep"; Sintaxis = "ep"; Detalle = "Abre `$PROFILE en Neovim para editarlo (alias: edit-profile)"; Ejemplos = @("ep") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "en"; Sintaxis = "en"; Detalle = "Abre la carpeta de configuración de Neovim (~AppData\Local\nvim) en Neovim (alias: edit-nvim)"; Ejemplos = @("en") }
+
+        # 2. Archivos & Búsqueda
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "v"; Sintaxis = "v [ruta] | <cmd> | v"; Detalle = "Wrapper inteligente de Neovim: abre ficheros o vuelca salidas de pipeline a buffer temporal"; Ejemplos = @("v Program.cs", "gs | v", "q 'SELECT TOP 10 * FROM Articulos' | v") }
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "vrg"; Sintaxis = "vrg <patrón> [ruta]"; Detalle = "Busca texto con Ripgrep y abre resultados directamente en Neovim dentro de la lista Quickfix (:copen)"; Ejemplos = @("vrg 'Get-ActiveSql'", "vrg 'kill-port' src/") }
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "touch"; Sintaxis = "touch <archivo...>"; Detalle = "Crea archivos vacíos o actualiza su fecha de modificación al estilo Unix (crea carpetas si faltan)"; Ejemplos = @("touch nuevo.sql", "touch test1.cs test2.cs") }
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "ff"; Sintaxis = "ff <patrón> [ruta]"; Detalle = "Búsqueda recursiva ultrarrápida de archivos por nombre usando Ripgrep o fallback nativo"; Ejemplos = @("ff 'Controller'", "ff '*.sql' database/") }
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "which"; Sintaxis = "which <comando>"; Detalle = "Muestra la ruta absoluta, tipo (Cmdlet, Alias, App) y versión de cualquier comando ejecutable"; Ejemplos = @("which nvim", "which git", "which q") }
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "head"; Sintaxis = "head <archivo> [-n 10]"; Detalle = "Muestra las primeras N líneas de un archivo o flujo de datos sin cargarlo todo en memoria"; Ejemplos = @("head error.log", "head error.log -n 25") }
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "tail"; Sintaxis = "tail <archivo> [-n 10]"; Detalle = "Muestra las últimas N líneas de un archivo o log (útil para inspeccionar errores recientes)"; Ejemplos = @("tail error.log", "tail error.log -n 50") }
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "extract"; Sintaxis = "extract <archivo> [dest]"; Detalle = "Descomprime automáticamente archivos (.zip, .tar.gz, .7z, .rar) usando 7z, tar o Expand-Archive"; Ejemplos = @("extract release.zip", "extract backup.7z ./salida") }
+        [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "cb"; Sintaxis = "cb [texto] | <cmd> | cb"; Detalle = "Copia texto o cualquier objeto de la consola directamente al portapapeles de Windows"; Ejemplos = @("cb 'Texto a copiar'", "Get-Location | cb") }
+
+        # 3. Git & Lazygit
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "lg"; Sintaxis = "lg"; Detalle = "Lanza la interfaz de terminal interactiva (TUI) de Lazygit en el repositorio actual"; Ejemplos = @("lg") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "repo-status"; Sintaxis = "repo-status [-f] [1|2|3]"; Detalle = "Dashboard en vivo de entornos RSGA/RSGA_2/RSGA_3 con salto rápido (alias: repos)"; Ejemplos = @("repos", "repos -f", "repos 2", "repos rsga") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "g"; Sintaxis = "g <args...>"; Detalle = "Atajo universal para Git con soporte completo de autocompletado en posh-git (ramas, flags)"; Ejemplos = @("g switch main", "g diff") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gs"; Sintaxis = "gs"; Detalle = "Estado compacto y legible del repositorio (git status -sb)"; Ejemplos = @("gs") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "ga"; Sintaxis = "ga"; Detalle = "Añade todos los cambios locales al índice (git add .)"; Ejemplos = @("ga") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gcom"; Sintaxis = "gcom '<mensaje>'"; Detalle = "Añade todos los cambios (git add -A) y crea el commit en un solo paso rápido"; Ejemplos = @("gcom 'fix(api): corregir validacion de stock'") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gcob"; Sintaxis = "gcob <nueva-rama>"; Detalle = "Crea una nueva rama y cambia a ella de inmediato (git checkout -b / git switch -c, alias: gswc)"; Ejemplos = @("gcob feature/soporte-multiterminal") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gb"; Sintaxis = "gb"; Detalle = "Lista las ramas locales ordenadas por fecha del último commit con tiempo relativo"; Ejemplos = @("gb") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gp"; Sintaxis = "gp / gf"; Detalle = "Descarga y fusiona cambios remotos (git pull / git fetch)"; Ejemplos = @("gp", "gf origin") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gpush"; Sintaxis = "gpush"; Detalle = "Sube los commits locales al repositorio remoto (git push)"; Ejemplos = @("gpush") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gpsup"; Sintaxis = "gpsup [remoto]"; Detalle = "Publica la rama actual configurando el tracking remoto (git push -u origin <rama>, alias: gpu)"; Ejemplos = @("gpsup", "gpu") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gco"; Sintaxis = "gco <rama/archivo>"; Detalle = "Cambia de rama o restaura ficheros con autocompletado inteligente con <Tab>"; Ejemplos = @("gco develop", "gco main") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "glog"; Sintaxis = "glog"; Detalle = "Historial gráfico compacto y coloreado de los últimos 10 commits"; Ejemplos = @("glog") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gundo"; Sintaxis = "gundo"; Detalle = "Deshace el último commit conservando todos los cambios preparados (staged) en el árbol de trabajo"; Ejemplos = @("gundo") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gss"; Sintaxis = "gss [mensaje]"; Detalle = "Guarda cambios en el stash con timestamp y rama activa (incluye archivos sin rastrear)"; Ejemplos = @("gss", "gss 'refactor conexion'") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gsl"; Sintaxis = "gsl"; Detalle = "Lista los stashes guardados con fechas relativas y colores legibles"; Ejemplos = @("gsl") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gsp"; Sintaxis = "gsp [índice]"; Detalle = "Aplica y retira el stash indicado (por defecto el último stash@{0})"; Ejemplos = @("gsp", "gsp 1") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "vmod"; Sintaxis = "vmod [-l] [-Splits]"; Detalle = "Muestra cambios coloreados y los abre en Neovim en pestañas con Quickfix (alias: vdiff)"; Ejemplos = @("vmod", "vmod -List", "vmod -Splits") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "vd"; Sintaxis = "vd [archivo]"; Detalle = "Abre el diff de un archivo en Neovim con vista dividida en paralelo (:diffsplit)"; Ejemplos = @("vd Program.cs", "vd") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "agy-review-pr"; Sintaxis = "agy-review-pr <rama>"; Detalle = "Audita y analiza una PR con Antigravity comparando contra develop sin cambiar de rama"; Ejemplos = @("agy-review-pr feature/login", "agy-review-pr bugfix/320 main -Print") }
+
+        # 4. Sistema & Red
+        [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "ports"; Sintaxis = "ports [filtro]"; Detalle = "Muestra todos los puertos TCP en escucha con su PID y nombre de proceso (alias: listening)"; Ejemplos = @("ports", "ports 4200", "ports sql") }
+        [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "kill-port"; Sintaxis = "kill-port <puerto...>"; Detalle = "Finaliza los procesos que bloquean uno o varios puertos TCP (alias: kp)"; Ejemplos = @("kp 4200", "kp 5000, 7000") }
+        [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "psfind"; Sintaxis = "psfind <nombre>"; Detalle = "Busca procesos en ejecución mostrando PID, memoria en MB y consumo de CPU (alias: psgrep)"; Ejemplos = @("psfind node", "psfind sql", "psfind dotnet") }
+        [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "myip"; Sintaxis = "myip"; Detalle = "Muestra la dirección IP local de la tarjeta de red activa y la IP pública externa"; Ejemplos = @("myip") }
+        [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "sysinfo"; Sintaxis = "sysinfo"; Detalle = "Resumen de salud del equipo: uptime de Windows, uso de memoria RAM y espacio libre en discos"; Ejemplos = @("sysinfo") }
+
+        # 5. SQL Server Toolkit
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q"; Sintaxis = "q <query/.sql> [switches]"; Detalle = "Motor ultrarrápido ADO.NET (switches: -Grid, -Clip, -Csv, -Json, -DryRun, -Timeout N)"; Ejemplos = @("q 'SELECT TOP 10 * FROM Articulos'", "q ./cambios.sql -DryRun", "q 'SELECT * FROM Clientes' -Grid") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect"; Sintaxis = "qconnect [srv] [bd]"; Detalle = "Abre una conexión persistente reutilizable de alto rendimiento (indicador [BD ⚡] en prompt)"; Ejemplos = @("qconnect", "qconnect 'PORT1220\\SQL_SERVER' 'SGA'") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc"; Sintaxis = "qdisc"; Detalle = "Cierra la sesión persistente activa y vuelve a conexiones transitorias (alias: qdisconnect)"; Ejemplos = @("qdisc") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "use"; Sintaxis = "use <BaseDatos>"; Detalle = "Cambia la base de datos activa al vuelo con autocompletado y refresco de caché"; Ejemplos = @("use SGA", "use RSGA_DEV") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "dbs"; Sintaxis = "dbs [-Grid] [-Clip]"; Detalle = "Lista todas las bases de datos de la instancia SQL actual con tamaño en MB y estado (alias: show-dbs)"; Ejemplos = @("dbs", "dbs -Grid") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "tables"; Sintaxis = "tables [filtro]"; Detalle = "Lista todas las tablas de la BD activa con su esquema y recuento exacto de filas (sin scan)"; Ejemplos = @("tables", "tables Articulos", "tables -Grid") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "views"; Sintaxis = "views [filtro]"; Detalle = "Lista todas las vistas de la BD activa con su fecha de creación y última modificación"; Ejemplos = @("views", "views vStock") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "top"; Sintaxis = "top <tabla> [n]"; Detalle = "Consulta rápida de las primeras N filas (por defecto 20) con soporte -Grid, -Clip, -Json"; Ejemplos = @("top Articulos", "top Articulos 50 -Grid", "top Clientes 10 -Clip") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "desc"; Sintaxis = "desc <tabla>"; Detalle = "Describe columnas, tipos de datos, nulabilidad y defaults de una tabla o vista"; Ejemplos = @("desc Articulos", "desc dbo.Clientes -Grid") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "count"; Sintaxis = "count <tabla>"; Detalle = "Recuento ultrarrápido de filas en 0 ms usando particiones DMVs (sys.dm_db_partition_stats)"; Ejemplos = @("count Articulos", "count MovimientosStock") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-table"; Sintaxis = "find-table <patrón>"; Detalle = "Busca tablas y vistas por coincidencia de texto en el nombre"; Ejemplos = @("find-table Stock", "find-table Pedido -Grid") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-col"; Sintaxis = "find-col <columna>"; Detalle = "Busca en qué tablas y vistas existe una columna dada en toda la base de datos"; Ejemplos = @("find-col IdArticulo", "find-col FechaCreacion") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-code"; Sintaxis = "find-code <patrón>"; Detalle = "Busca texto dentro del DDL de SPs, Vistas, Funciones y Triggers (alias: find-sp, grep-sql)"; Ejemplos = @("find-code 'usp_Calcular'", "find-sp 'ActualizarStock' -Grid") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who"; Sintaxis = "who [-Grid]"; Detalle = "Monitor en tiempo real de sesiones activas de usuario, bloqueos (blocking) y consultas"; Ejemplos = @("who", "who -Grid") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see"; Sintaxis = "see <objeto> [-Clip]"; Detalle = "Muestra el código fuente DDL de un SP, Vista, Función o Trigger en consola"; Ejemplos = @("see usp_RecalcularStock", "see vArticulosActivos -Clip") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see-idx"; Sintaxis = "see-idx <tabla>"; Detalle = "Inspecciona los índices definidos, tipo (Clustered/Nonclustered) y columnas clave"; Ejemplos = @("see-idx Articulos") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q2excel"; Sintaxis = "q2excel <query/.sql>"; Detalle = "Ejecuta una consulta SQL y la abre directamente en Excel en formato español (alias: qexcel)"; Ejemplos = @("q2excel 'SELECT * FROM Articulos'", "qexcel ./informe.sql") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "open-sql"; Sintaxis = "open-sql <objeto>"; Detalle = "Extrae el DDL de un objeto SQL y lo abre en Neovim listo para inspeccionar o editar"; Ejemplos = @("open-sql usp_GenerarPedido") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "vsql"; Sintaxis = "vsql"; Detalle = "Scratchpad SQL temporal en Neovim con opción de ejecución directa contra la BD al guardar (:wq)"; Ejemplos = @("vsql") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qfmt"; Sintaxis = "qfmt <query> [-Clip]"; Detalle = "Formatea e indenta una consulta SQL desordenada para mayor claridad y limpieza"; Ejemplos = @("qfmt 'SELECT a,b FROM t WHERE x=1' -Clip") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qclip"; Sintaxis = "qclip <query/.sql>"; Detalle = "Ejecuta la consulta SQL y copia directamente los resultados tabulados al portapapeles"; Ejemplos = @("qclip 'SELECT TOP 20 * FROM Articulos'") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qlog"; Sintaxis = "qlog [filtro] [-Last]"; Detalle = "Consulta el historial persistente de consultas SQL ejecutadas en `$HOME\.sql_history.tsv"; Ejemplos = @("qlog", "qlog Articulos -Last 10") }
+
+        # 6. Consola & Atajos
+        [PSCustomObject]@{ Categoria = "Consola & Atajos"; Comando = "hist"; Sintaxis = "hist [filtro] [-Last]"; Detalle = "Busca comandos ejecutados previamente en el historial de la sesión de PowerShell"; Ejemplos = @("hist", "hist git", "hist sql -Last 20") }
+        [PSCustomObject]@{ Categoria = "Consola & Atajos"; Comando = "HistorySearch"; Sintaxis = "↑ / ↓"; Detalle = "Búsqueda contextual en el historial: pulsa flecha arriba tras escribir un prefijo (ej. 'git ')"; Ejemplos = @("Escribe 'git ' y pulsa ↑") }
+        [PSCustomObject]@{ Categoria = "Consola & Atajos"; Comando = "SqlTableCompletion"; Sintaxis = "Ctrl + Espacio"; Detalle = "Autocompletado predictivo inteligente de nombres de tablas y vistas de SQL Server en la consola"; Ejemplos = @("Escribe 'SELECT * FROM Art' y pulsa Ctrl+Espacio") }
+        [PSCustomObject]@{ Categoria = "Consola & Atajos"; Comando = "ViEditVisually"; Sintaxis = "Ctrl+X, Ctrl+E"; Detalle = "Abre el comando que estás escribiendo en una ventana de Neovim para edición multilínea compleja"; Ejemplos = @("Pulsa Ctrl+X seguido de Ctrl+E en el prompt") }
+    )
+
+    if ($Filter) {
+        # Si el filtro coincide exactamente con el nombre de un comando o su alias, mostrar ficha técnica
+        $exact = $commands | Where-Object {
+            $_.Comando -eq $Filter -or
+            ($_.Detalle -match "(?i)\balias:\s*[^)]*\b$([regex]::Escape($Filter))\b")
+        } | Select-Object -First 1
+        if ($exact) {
+            Write-Host "`n┌─ Ficha de Ayuda: " -NoNewline -ForegroundColor Cyan
+            Write-Host $exact.Comando.ToUpper() -NoNewline -ForegroundColor Yellow
+            Write-Host " [$($exact.Categoria)] ─┐" -ForegroundColor Cyan
+            Write-Host "  Sintaxis:    " -NoNewline -ForegroundColor DarkGray
+            Write-Host $exact.Sintaxis -ForegroundColor Green
+            Write-Host "  Descripción: " -NoNewline -ForegroundColor DarkGray
+            Write-Host $exact.Detalle -ForegroundColor White
+            if ($exact.Ejemplos -and $exact.Ejemplos.Count -gt 0) {
+                Write-Host "  Ejemplos de uso:" -ForegroundColor DarkGray
+                foreach ($ex in $exact.Ejemplos) {
+                    Write-Host "    • $ex" -ForegroundColor Cyan
+                }
+            }
+            Write-Host "└──────────────────────────────────────────────────────────┘`n" -ForegroundColor Cyan
+            return
+        }
+
+        # Filtrado amplio por comando, categoría, sintaxis o descripción
+        $commands = $commands | Where-Object {
+            $_.Comando -like "*$Filter*" -or $_.Detalle -like "*$Filter*" -or $_.Categoria -like "*$Filter*" -or $_.Sintaxis -like "*$Filter*"
+        }
+
+        if (-not $commands -or $commands.Count -eq 0) {
+            Write-Host "● No se encontraron comandos que coincidan con '$Filter'." -ForegroundColor Yellow
+            return
+        }
+    }
+
+    Write-Host "`n=== Centro de Mando: `$PROFILE ===`n" -ForegroundColor DarkCyan
 
     $groups = $commands | Group-Object Categoria
     foreach ($group in $groups) {
         Write-Host " [$($group.Name)]" -ForegroundColor Yellow
         foreach ($item in $group.Group) {
-            $cmd = $item.Comando.PadRight(14)
-             Write-Host "   $cmd" -NoNewline -ForegroundColor Green
-             Write-Host " -> " -NoNewline -ForegroundColor DarkGray
-             Write-Host $item.Descripcion -ForegroundColor White
-         }
-         Write-Host ""
-     }
- }
- 
- Set-Alias phelp Show-ProfileHelp
- Set-Alias '?p'  Show-ProfileHelp
+            $cmdDisplay = $item.Sintaxis.PadRight(26)
+            Write-Host "   $cmdDisplay" -NoNewline -ForegroundColor Green
+            Write-Host " -> " -NoNewline -ForegroundColor DarkGray
+            Write-Host $item.Detalle -ForegroundColor White
+        }
+        Write-Host ""
+    }
+
+    Write-Host "Tip: Usa 'phelp <comando>' (ej. 'phelp q', 'phelp vmod', 'phelp top') para ver su ficha técnica con ejemplos.`n" -ForegroundColor DarkGray
+}
+
+Set-Alias phelp Show-ProfileHelp
+Set-Alias '?p'  Show-ProfileHelp
  
  # ==============================================================================
  # 5. SQL SERVER TOOLKIT (ADO.NET + PowerShell)
@@ -1970,6 +2627,192 @@ function qfmt {
     }
 }
 
+# Lista todas las bases de datos de la instancia SQL actual con su tamaño y estado
+function dbs {
+    <#
+    .SYNOPSIS
+        Lista todas las bases de datos de la instancia SQL actual con tamaño en MB y estado.
+    .EXAMPLE
+        dbs
+        dbs -Grid
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$Grid,
+        [switch]$Clip
+    )
+    $query = @"
+SELECT 
+    d.name AS [BaseDatos],
+    d.state_desc AS [Estado],
+    d.recovery_model_desc AS [RecoveryModel],
+    CAST(ROUND(SUM(mf.size) * 8.0 / 1024.0, 2) AS NUMERIC(10,2)) AS [TamanoMB]
+FROM sys.databases d
+LEFT JOIN sys.master_files mf ON d.database_id = mf.database_id
+GROUP BY d.name, d.state_desc, d.recovery_model_desc
+ORDER BY d.name
+"@
+    $qParams = @{ QueryOrPath = $query; All = $true }
+    if ($Grid) { $qParams['Grid'] = $true }
+    if ($Clip) { $qParams['Clip'] = $true }
+    q @qParams
+}
+Set-Alias show-dbs dbs
+
+# Lista las tablas de la base de datos activa con recuento de filas ultrarrápido sin scan
+function tables {
+    <#
+    .SYNOPSIS
+        Lista todas las tablas de la BD actual con recuento exacto de filas (sin scan de tablas).
+    .EXAMPLE
+        tables
+        tables Articulos
+        tables -Grid
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Filter,
+
+        [switch]$Grid,
+        [switch]$Clip
+    )
+    $cleanFilter = ($Filter -replace "[';]", '')
+    $query = @"
+SELECT 
+    s.name AS [Esquema],
+    t.name AS [Tabla],
+    SUM(p.row_count) AS [Filas]
+FROM sys.tables t
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+INNER JOIN sys.dm_db_partition_stats p ON t.object_id = p.object_id
+WHERE p.index_id IN (0, 1)
+  AND (@Filter IS NULL OR t.name LIKE @Pattern OR s.name LIKE @Pattern)
+GROUP BY s.name, t.name
+ORDER BY s.name, t.name
+"@
+    $qParams = @{
+        QueryOrPath = $query
+        Parameters  = @{
+            Filter  = if ($Filter) { $Filter } else { $null }
+            Pattern = if ($Filter) { "%$cleanFilter%" } else { "%" }
+        }
+        All         = $true
+    }
+    if ($Grid) { $qParams['Grid'] = $true }
+    if ($Clip) { $qParams['Clip'] = $true }
+    q @qParams
+}
+
+# Lista las vistas de la base de datos activa
+function views {
+    <#
+    .SYNOPSIS
+        Lista todas las vistas de la BD activa con fecha de creación y modificación.
+    .EXAMPLE
+        views
+        views vStock
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Filter,
+
+        [switch]$Grid,
+        [switch]$Clip
+    )
+    $cleanFilter = ($Filter -replace "[';]", '')
+    $query = @"
+SELECT 
+    s.name AS [Esquema],
+    v.name AS [Vista],
+    v.create_date AS [FechaCreacion],
+    v.modify_date AS [UltimaModificacion]
+FROM sys.views v
+INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
+WHERE (@Filter IS NULL OR v.name LIKE @Pattern OR s.name LIKE @Pattern)
+ORDER BY s.name, v.name
+"@
+    $qParams = @{
+        QueryOrPath = $query
+        Parameters  = @{
+            Filter  = if ($Filter) { $Filter } else { $null }
+            Pattern = if ($Filter) { "%$cleanFilter%" } else { "%" }
+        }
+        All         = $true
+    }
+    if ($Grid) { $qParams['Grid'] = $true }
+    if ($Clip) { $qParams['Clip'] = $true }
+    q @qParams
+}
+
+# Consulta rápida de las primeras N filas de una tabla o vista
+function top {
+    <#
+    .SYNOPSIS
+        Muestra rápidamente las primeras N filas (por defecto 20) de cualquier tabla o vista.
+    .EXAMPLE
+        top Articulos
+        top Articulos 50 -Grid
+        top Clientes 10 -Clip
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Table,
+
+        [Parameter(Position = 1)]
+        [int]$Count = 20,
+
+        [switch]$Grid,
+        [switch]$Clip,
+        [switch]$Json
+    )
+
+    $clean = ($Table.Trim().Trim('"', "'") -replace '[\0\r\n\t;]', '').Replace("'", "''")
+    $bracketed = if ($clean -match '^\[?([^.\]]+)\]?\.\[?([^.\]]+)\]?$') {
+        "[" + $matches[1].Trim('[]') + "].[" + $matches[2].Trim('[]') + "]"
+    } else {
+        "[" + $clean.Trim('[]') + "]"
+    }
+
+    $query = "SELECT TOP $Count * FROM $bracketed"
+    $qParams = @{ QueryOrPath = $query; All = $true }
+    if ($Grid) { $qParams['Grid'] = $true }
+    if ($Clip) { $qParams['Clip'] = $true }
+    if ($Json) { $qParams['Json'] = $true }
+    q @qParams
+}
+
+Register-ArgumentCompleter -CommandName top -ParameterName Table -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    if ($null -eq $global:SqlTableCache -or $global:SqlTableCache.Count -eq 0) {
+        Update-SqlTableCache
+    }
+    $cleanWord = $wordToComplete.TrimStart('"', "'", '[')
+    $global:SqlTableCache | Where-Object { $_ -like "$cleanWord*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', "Tabla: $_")
+    }
+}
+
+# Ejecuta una consulta SQL y copia directamente los resultados tabulados al portapapeles
+function qclip {
+    <#
+    .SYNOPSIS
+        Ejecuta una consulta SQL y copia directamente los resultados tabulados al portapapeles.
+    .EXAMPLE
+        qclip "SELECT TOP 50 * FROM Articulos"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$QueryOrPath
+    )
+    q -QueryOrPath $QueryOrPath -Clip -All
+}
+
 # ==============================================================================
 # 6. AUTOCOMPLETADO SQL (PSReadLine KeyHandler: Ctrl+Space)
 # ==============================================================================
@@ -2035,8 +2878,37 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
         }
     }
 
+    # Búsqueda contextual en el historial de comandos (filtrar por prefijo escrito)
+    Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
+    Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
+
     # Edición visual de la línea de comandos con Neovim (Ctrl+X, Ctrl+E)
     Set-PSReadLineKeyHandler -Chord 'Ctrl+x,Ctrl+e' -Function ViEditVisually
+}
+
+# Búsqueda en el historial de comandos de PowerShell
+function hist {
+    <#
+    .SYNOPSIS
+        Busca comandos en el historial de PowerShell por texto o muestra los últimos N.
+    .EXAMPLE
+        hist
+        hist git
+        hist sql -Last 30
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Filter,
+
+        [Parameter(Position = 1)]
+        [int]$Last = 25
+    )
+    $entries = Get-History
+    if ($Filter) {
+        $entries = $entries | Where-Object { $_.CommandLine -like "*$Filter*" }
+    }
+    $entries | Select-Object -Last $Last | Format-Table Id, CommandLine -AutoSize
 }
 
 # ==============================================================================
