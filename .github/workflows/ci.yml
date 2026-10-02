@@ -1,0 +1,73 @@
+﻿name: CI & Perfil Validation
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main, develop ]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validar Sintaxis, Codificación y Carga
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: 1. Comprobar Codificación UTF-8 con BOM
+        shell: powershell
+        run: |
+          Write-Host "Verificando cabecera BOM (0xEF, 0xBB, 0xBF) en archivos .ps1..." -ForegroundColor Cyan
+          $failed = $false
+          Get-ChildItem -Filter *.ps1 -Recurse | Where-Object { $_.FullName -notmatch '\\Modules\\' } | ForEach-Object {
+              $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+              $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+              if (-not $hasBom) {
+                  Write-Error "ERROR: El archivo '$($_.FullName)' no tiene BOM UTF-8. Windows PowerShell 5.1 requiere BOM."
+                  $failed = $true
+              } else {
+                  Write-Host "  ✓ BOM OK: $($_.Name)" -ForegroundColor Green
+              }
+          }
+          if ($failed) {
+              exit 1
+          }
+
+      - name: 2. Análisis Sintáctico AST en Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          Write-Host "Analizando sintaxis con el Parser de PowerShell 5.1..." -ForegroundColor Cyan
+          $totalErrors = 0
+          Get-ChildItem -Filter *.ps1 -Recurse | Where-Object { $_.FullName -notmatch '\\Modules\\' } | ForEach-Object {
+              $errs = $null
+              $null = [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errs)
+              if ($errs -and $errs.Count -gt 0) {
+                  Write-Error "ERROR en $($_.Name): $($errs.Count) error(es) de sintaxis:"
+                  $errs | ForEach-Object { Write-Host "  - $($_.Message)" -ForegroundColor Red }
+                  $totalErrors += $errs.Count
+              } else {
+                  Write-Host "  ✓ Sintaxis OK: $($_.Name)" -ForegroundColor Green
+              }
+          }
+          if ($totalErrors -gt 0) {
+              exit 1
+          }
+
+      - name: 3. Smoke Test de Carga del Perfil
+        shell: powershell
+        run: |
+          Write-Host "Comprobando carga del perfil en sesión limpia..." -ForegroundColor Cyan
+          . .\Microsoft.PowerShell_profile.ps1
+          Write-Host "✓ Perfil cargado con éxito sin excepciones." -ForegroundColor Green
+
+          $testCommands = @('repos', 'phelp', 'scratch', 'sql-ping', 'profile-bench')
+          foreach ($c in $testCommands) {
+              if (Get-Command $c -ErrorAction SilentlyContinue) {
+                  Write-Host "  ✓ Comando registrado: $c" -ForegroundColor Green
+              } else {
+                  Write-Error "ERROR: El comando '$c' no se registró correctamente."
+                  exit 1
+              }
+          }
