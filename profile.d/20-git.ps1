@@ -88,8 +88,11 @@ function gco {
     }
 }
 function ga    { git add . $args }
-function glog  { git log --oneline --graph --decorate -n 10 $args }
-function gme   { git for-each-ref --format="%(committername) | %(refname:short)" refs/remotes/ | Select-String "diego.corral" }
+function gme {
+    $me = (git config user.name)
+    if (-not $me) { $me = $env:USERNAME }
+    git for-each-ref --format="%(committername) | %(refname:short)" refs/remotes/ | Select-String -Pattern $me -SimpleMatch
+}
 
 # Guardar cambios en el stash con mensaje descriptivo y timestamp
 function gss {
@@ -336,6 +339,93 @@ function vd {
     } else {
         git difftool -t nvimdiff -y
     }
+}
+
+# Guardado exprés de cambios pendientes en commit temporal
+function gwip {
+    <#
+    .SYNOPSIS
+        Crea un commit rápido temporal con todo el trabajo en curso para permitir cambiar de rama sin perder nada.
+    .EXAMPLE
+        gwip
+        gwip "soporte de autenticacion"
+    #>
+    [CmdletBinding()]
+    param([string]$Message)
+    $branch = (git branch --show-current 2>$null)
+    $ts = (Get-Date -Format "yyyy-MM-dd HH:mm")
+    $desc = if ($Message) { "$Message ($ts)" } else { "WIP temporal ($ts)" }
+    git add -A
+    git commit -m "WIP: $desc [skip ci]" --no-verify
+    Write-Host "✓ Trabajo guardado en commit temporal WIP en [$branch]." -ForegroundColor Green
+    Write-Host "  Usa 'gunwip' cuando quieras restaurar estos cambios al árbol de trabajo." -ForegroundColor DarkGray
+}
+
+# Restaura el commit temporal creado con gwip
+function gunwip {
+    <#
+    .SYNOPSIS
+        Deshace el último commit si fue creado con 'gwip' y devuelve los cambios al árbol de trabajo.
+    #>
+    $lastMsg = (git log -1 --format='%s' 2>$null)
+    if (-not $lastMsg) {
+        Write-Warning "No se pudo leer el último commit."
+        return
+    }
+    if ($lastMsg -notlike "WIP:*") {
+        Write-Warning "El último commit no es un commit temporal de tipo WIP ('$lastMsg')."
+        Write-Host "Si realmente deseas deshacerlo, usa 'gundo'." -ForegroundColor Yellow
+        return
+    }
+    git reset --soft HEAD~1
+    git reset HEAD 2>$null
+    Write-Host "✓ Commit WIP restaurado al árbol de trabajo (archivos sin confirmar)." -ForegroundColor Green
+}
+
+# Limpieza y poda de ramas locales huérfanas o ya eliminadas en el servidor remoto
+function gclean {
+    <#
+    .SYNOPSIS
+        Ejecuta git fetch -p y elimina de forma segura ramas locales cuyo upstream remoto ya no existe.
+    .EXAMPLE
+        gclean
+        gclean -Force
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$Force
+    )
+    Write-Host "Sincronizando estado y podando referencias remotas (git fetch -p)..." -ForegroundColor DarkGray
+    git fetch -p -q 2>$null
+
+    $goneBranches = @(git branch -vv 2>$null | Where-Object { $_ -match ': gone\]' } | ForEach-Object {
+        $parts = $_.Trim().Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+        $bName = if ($parts[0] -eq '*') { $parts[1] } else { $parts[0] }
+        $bName
+    } | Where-Object { $_ -and $_ -notmatch '^(master|main|develop|staging)$' })
+
+    if ($goneBranches.Count -eq 0) {
+        Write-Host "✓ No hay ramas locales huérfanas pendientes de limpieza." -ForegroundColor Green
+        return
+    }
+
+    Write-Host "`nRamas locales detectadas cuyo tracking remoto ha sido eliminado:" -ForegroundColor Yellow
+    foreach ($b in $goneBranches) {
+        Write-Host "  - $b" -ForegroundColor White
+    }
+
+    if (-not $Force) {
+        $confirm = Read-Host "`n¿Deseas eliminar estas $($goneBranches.Count) ramas locales? (s/N)"
+        if ($confirm -notmatch '^(s|y|si|yes)$') {
+            Write-Host "Operación cancelada." -ForegroundColor DarkGray
+            return
+        }
+    }
+
+    foreach ($b in $goneBranches) {
+        git branch -D $b
+    }
+    Write-Host "✓ Se han eliminado $($goneBranches.Count) ramas huérfanas." -ForegroundColor Green
 }
 
 # Helper para descubrir recursivamente repositorios Git en el directorio de proyectos
