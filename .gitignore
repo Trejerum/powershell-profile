@@ -1,6 +1,9 @@
 # Conexiones locales a bases de datos (credenciales, servidores internos)
 sql-connections.json
 
+# Personalizaciones y atajos locales del equipo (no rastreados)
+profile.local.ps1
+
 # Módulos de PowerShell instalados (se gestionan vía install.ps1 / Install-Module)
 Modules/
 

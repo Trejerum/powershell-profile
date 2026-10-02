@@ -50,9 +50,9 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
 | Archivo | Área | Descripción |
 | :--- | :--- | :--- |
 | **`00-env.ps1`** | **Entorno & Consola** | Codificación `UTF-8` en entrada, salida y consola. Asigna Neovim como editor global (`$env:EDITOR = 'nvim'`) y configura navegación contextual en el historial (<kbd>↑</kbd>/<kbd>↓</kbd>) y edición visual (<kbd>Ctrl+X, Ctrl+E</kbd>). |
-| **`10-navigation.ps1`** | **Navegación Ágil** | Subida de niveles (`..`, `...`, `....`), creación y entrada (`mkcd`), explorador (`open`/`o`), salto dinámico a proyectos (`proj`), recarga (`reload`/`rel`) y atajos a repositorios (`sga`, `rsga`, `rsga2`, `rsga3`, `ep`, `en`). |
+| **`10-navigation.ps1`** | **Navegación Ágil** | Subida de niveles (`..`, `...`, `....`), creación y entrada (`mkcd`), explorador (`open`/`o`), recarga (`reload`/`rel`) y edición de perfil (`ep`, `en`, `ep local`). |
 | **`15-notes.ps1`** | **Notas & Diario** | Gestión de notas diarias en Neovim (`note`/`today`), captura rápida desde consola, buscador histórico (`snote`/`vnote`), dashboard (`lnotes`), scratchpad SQL (`note-sql`) y versionado Git (`notes-sync`). |
-| **`20-git.ps1`** | **Git & Lazygit** | Alias universal `g`, integración con `posh-git`, dashboard en vivo (`repo-status`/`repos`), TUI (`lg`), commits rápidos (`gcom`), checkout/switch (`gco`, `gcob`), ramas ordenadas (`gb`), deshacer (`gundo`), diff split (`vd`), visor de modificados (`vmod`), stash (`gss`, `gsl`, `gsp`) y auditorías con Antigravity (`agy-review-pr`). |
+| **`20-git.ps1`** | **Git & Lazygit** | Hub universal de proyectos (`repos`, `proj`), alias universal `g`, integración con `posh-git`, TUI (`lg`), commits rápidos (`gcom`), checkout/switch (`gco`, `gcob`), ramas ordenadas (`gb`), deshacer (`gundo`), diff split (`vd`), visor de modificados (`vmod`), stash (`gss`, `gsl`, `gsp`) y auditorías con Antigravity (`agy-review-pr`). |
 | **`30-sql.ps1`** | **SQL Server Toolkit** | Motor ADO.NET (`q`), sesión persistente (`qconnect`, `qdisc`, `use`), exploración (`dbs`, `tables`, `views`, `top`, `desc`, `count`), búsqueda (`find-table`, `find-col`, `find-code`), monitor (`who`, `see`, `see-idx`), exportación (`q2excel`, `qclip`, `qfmt`), scratchpad (`vsql`) y autocompletado en consola (<kbd>Ctrl</kbd>+<kbd>Espacio</kbd>). |
 | **`40-utils.ps1`** | **Utilidades Generales** | Archivos (`touch`, `ff`, `head`, `tail`, `extract`), diagnóstico (`ports`, `kill-port`/`kp`, `psfind`, `myip`, `sysinfo`), portapapeles (`cb`), integración Neovim (`v`, `vrg`) y buscador de comandos de consola (`hist`). |
 | **`50-help.ps1`** | **Centro de Ayuda** | Guía de comandos agrupada por áreas (`phelp`, `phelp git`, `phelp sql`) y fichas técnicas detalladas con ejemplos (`phelp <comando>`). |
@@ -65,14 +65,12 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
 - **`..` / `...` / `....`**: Sube 1, 2 o 3 niveles en el árbol de directorios sin teclear `cd ..\..`.
 - **`mkcd <carpeta>`**: Crea un directorio (incluyendo carpetas intermedias si faltan) y entra en él inmediatamente.
 - **`open [ruta]` (alias `o`)**: Abre el Explorador de Windows en la carpeta actual o en la ruta especificada.
-- **`proj [nombre]`**: Salto dinámico a cualquier subproyecto dentro de `Documentos\Proyectos` con autocompletado <kbd>Tab</kbd>. Si se ejecuta sin parámetros, lista los proyectos disponibles.
+- **`proj [nombre]` (alias de `repos`)**: Salto dinámico a cualquier subproyecto dentro de `Documentos\Proyectos` con autocompletado <kbd>Tab</kbd>. Si se ejecuta sin parámetros, muestra el dashboard de proyectos.
 - **`reload` (alias `rel`, `rprof`, `reload-profile`)**: Recarga el perfil en la consola actual con confirmación visual.
-- **Atajos directos de proyectos:**
-  - `sga`: Salta a `$HOME\Documentos\Proyectos\SGA`.
-  - `rsga` / `rsga2` / `rsga3`: Salta a las instancias locales del repositorio RSGA.
+- **Atajos de entorno y configuración:**
   - `profile`: Salta a la carpeta del perfil de PowerShell.
   - `notes [args]`: Navega a `$HOME\Documentos\Notes` (o ejecuta captura/apertura si recibe argumentos).
-  - `ep [modulo]` (alias `edit-profile`): Abre `Microsoft.PowerShell_profile.ps1` o un módulo específico (ej. `ep notes`, `ep sql`, `ep git`, `ep utils`) en Neovim.
+  - `ep [modulo]` (alias `edit-profile`): Abre `Microsoft.PowerShell_profile.ps1`, un módulo específico (ej. `ep notes`, `ep sql`, `ep git`, `ep utils`) o tu configuración local personal (`ep local`) en Neovim.
   - `en` (alias `edit-nvim`): Abre la configuración de Neovim (`~\AppData\Local\nvim`).
 
 ---
@@ -122,11 +120,13 @@ El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura r�
 
 ## 🌿 3. Git & Lazygit Superpowers
 
-- **`lg`**: Lanza la interfaz gráfica interactiva de terminal de **Lazygit**.
-- **`repo-status` (alias `repos`, `sga-status`)**: Dashboard en tiempo real de tus entornos/clones Git de SGA (`RSGA`, `RSGA_2`, `RSGA_3`):
+- **`repos [índice|nombre]` (alias `repo-status`, `proj`)**: Hub universal de proyectos y dashboard interactivo de Git:
+  - Escanea automáticamente los repositorios en `$global:ProjectsRoot` (por defecto `Documentos\Proyectos`, configurable vía `$env:PROJECTS_DIR`).
   - Muestra rama activa, cambios locales pendientes (`+staged`, `~mod`, `!new` o `Limpio`), estado de sincronización con origin (`Al día`, `↑ N pendiente(s)`, `↓ N por bajar`) y el último commit con fecha relativa.
-  - **Salto rápido:** `repos 1` (salta a `RSGA`), `repos 2` (`RSGA_2`), `repos 3` (`RSGA_3`).
-  - **Refresco remoto:** `repos -f` (hace `git fetch` en los clones antes de evaluar para reflejar el estado de origin al instante).
+  - **Salto instantáneo por número:** `repos 1`, `repos 2` (salta al número del listado).
+  - **Salto por nombre con autocompletado <kbd>Tab</kbd>:** `repos <nombre>` (búsqueda inteligente con autocompletado nativo).
+  - **Apertura directa:** `repos 1 -Nvim` (o `-v`), `repos 1 -Open` (o `-o`), `repos 1 -Code`.
+  - **Refresco remoto:** `repos -f` (hace `git fetch` silencioso en los repositorios antes de evaluar para reflejar el estado de origin al instante).
 - **`gcom "<mensaje>"`**: Prepara todos los cambios (`git add -A`) y crea el commit en un solo paso rápido.
 - **`gcob <nueva-rama>` (alias `gswc`)**: Crea una nueva rama y cambia a ella de inmediato (`git checkout -b` / `git switch -c`).
 - **`gb`**: Lista las ramas locales ordenadas por fecha de último commit con indicador de tiempo relativo.

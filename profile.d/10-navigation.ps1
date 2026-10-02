@@ -2,13 +2,13 @@
 # 10-NAVIGATION: NAVEGACIÓN RÁPIDA (PROYECTOS & ENTORNO)
 # ==============================================================================
 
-$global:SgaRoot = Join-Path $HOME "Documentos\Proyectos\SGA"
-$script:SgaRoot = $global:SgaRoot
+# Directorio raíz de proyectos (configurable vía variable de entorno $env:PROJECTS_DIR)
+$global:ProjectsRoot = if ($env:PROJECTS_DIR -and (Test-Path -LiteralPath $env:PROJECTS_DIR)) {
+    $env:PROJECTS_DIR
+} else {
+    Join-Path $HOME "Documentos\Proyectos"
+}
 
-function sga     { Set-Location $global:SgaRoot }
-function rsga    { Set-Location (Join-Path $global:SgaRoot "RSGA") }
-function rsga2   { Set-Location (Join-Path $global:SgaRoot "RSGA_2") }
-function rsga3   { Set-Location (Join-Path $global:SgaRoot "RSGA_3") }
 function profile { Set-Location (Split-Path -Parent $PROFILE) }
 function notes   { Set-Location (Join-Path $HOME "Documentos\Notes") }
 
@@ -20,12 +20,21 @@ function ep {
         ep
         ep sql
         ep git
+        ep local
     #>
     param(
         [Parameter(Position = 0)]
         [string]$Module
     )
     if ($Module) {
+        if ($Module -ieq "local") {
+            $localF = Join-Path (Split-Path -Parent $PROFILE) "profile.local.ps1"
+            if (-not (Test-Path -LiteralPath $localF)) {
+                [System.IO.File]::WriteAllText($localF, "# ==============================================================================`r`n# PERFIL LOCAL PERSONAL`r`n# ==============================================================================`r`n", [System.Text.Encoding]::UTF8)
+            }
+            nvim $localF
+            return
+        }
         $profDir = Split-Path -Parent $PROFILE
         $target = Get-ChildItem -Path "$profDir\profile.d\*$Module*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($target) {

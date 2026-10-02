@@ -21,11 +21,7 @@ function Show-ProfileHelp {
 
     $commands = @(
         # 1. Navegación & Entorno
-        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "sga"; Sintaxis = "sga"; Detalle = "Navega a la raíz del proyecto SGA (`$HOME\Documentos\Proyectos\SGA)"; Ejemplos = @("sga") }
-        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "rsga"; Sintaxis = "rsga"; Detalle = "Navega al repositorio principal RSGA"; Ejemplos = @("rsga") }
-        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "rsga2"; Sintaxis = "rsga2"; Detalle = "Navega al entorno o copia secundaria RSGA_2"; Ejemplos = @("rsga2") }
-        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "rsga3"; Sintaxis = "rsga3"; Detalle = "Navega al entorno o copia terciaria RSGA_3"; Ejemplos = @("rsga3") }
-        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "proj"; Sintaxis = "proj [nombre]"; Detalle = "Navega a cualquier subproyecto en Documentos\Proyectos con autocompletado <Tab> (sin argumentos lista proyectos)"; Ejemplos = @("proj", "proj MiProyecto", "proj ApiService") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "proj"; Sintaxis = "proj [nombre]"; Detalle = "Navega dinámicamente a cualquier subproyecto con autocompletado <Tab> (alias de repos)"; Ejemplos = @("proj", "proj MiProyecto", "proj ApiService") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "profile"; Sintaxis = "profile"; Detalle = "Navega a la carpeta física del perfil de PowerShell"; Ejemplos = @("profile") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "notes"; Sintaxis = "notes"; Detalle = "Navega a la carpeta de notas personales (`$HOME\Documentos\Notes)"; Ejemplos = @("notes") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = ".."; Sintaxis = "..  |  ...  |  ...."; Detalle = "Sube 1, 2 o 3 niveles de directorio en el árbol del sistema de archivos"; Ejemplos = @("..", "...", "....") }
@@ -58,7 +54,7 @@ function Show-ProfileHelp {
 
         # 3. Git & Lazygit
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "lg"; Sintaxis = "lg"; Detalle = "Lanza la interfaz de terminal interactiva (TUI) de Lazygit en el repositorio actual"; Ejemplos = @("lg") }
-        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "repo-status"; Sintaxis = "repo-status [-f] [1|2|3]"; Detalle = "Dashboard en vivo de entornos RSGA/RSGA_2/RSGA_3 con salto rápido (alias: repos)"; Ejemplos = @("repos", "repos -f", "repos 2", "repos rsga") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "repos"; Sintaxis = "repos [-f] [índice|nombre] [-v|-o|-Code]"; Detalle = "Dashboard Git en vivo de tus repositorios con salto rápido por número o nombre (alias: repo-status, proj)"; Ejemplos = @("repos", "repos -f", "repos 1", "repos backend -v") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "g"; Sintaxis = "g <args...>"; Detalle = "Atajo universal para Git con soporte completo de autocompletado en posh-git (ramas, flags)"; Ejemplos = @("g switch main", "g diff") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gs"; Sintaxis = "gs"; Detalle = "Estado compacto y legible del repositorio (git status -sb)"; Ejemplos = @("gs") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "ga"; Sintaxis = "ga"; Detalle = "Añade todos los cambios locales al índice (git add .)"; Ejemplos = @("ga") }

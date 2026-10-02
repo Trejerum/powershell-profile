@@ -306,17 +306,56 @@ function vd {
     }
 }
 
-# Dashboard multi-entorno para repositorios SGA (RSGA, RSGA_2, RSGA_3) con salto rápido
+# Helper para descubrir recursivamente repositorios Git en el directorio de proyectos
+function Get-ProfileGitRepositories {
+    <#
+    .SYNOPSIS
+        Descubre recursivamente repositorios Git en una ruta base hasta profundidad 3.
+    #>
+    param(
+        [string]$BasePath = $global:ProjectsRoot,
+        [int]$MaxDepth = 3
+    )
+
+    if (-not (Test-Path -LiteralPath $BasePath)) { return @() }
+
+    $found = [System.Collections.Generic.List[System.IO.DirectoryInfo]]::new()
+
+    function _ScanDir([string]$curr, [int]$depth) {
+        if ($depth -gt $MaxDepth) { return }
+        $gitDir = Join-Path $curr ".git"
+        if (Test-Path -LiteralPath $gitDir) {
+            $found.Add([System.IO.DirectoryInfo]::new($curr))
+            return
+        }
+        try {
+            $subdirs = [System.IO.Directory]::GetDirectories($curr)
+            foreach ($sub in $subdirs) {
+                $name = [System.IO.Path]::GetFileName($sub)
+                if ($name.StartsWith(".") -or $name -in @('node_modules', 'bin', 'obj', 'packages', 'target', '.vs', '.git')) {
+                    continue
+                }
+                _ScanDir $sub ($depth + 1)
+            }
+        } catch { }
+    }
+
+    _ScanDir $BasePath 1
+    return @($found | Sort-Object FullName)
+}
+
+# Hub universal de proyectos y dashboard de repositorios Git
 function repo-status {
     <#
     .SYNOPSIS
-        Muestra un dashboard en tiempo real de los entornos/clones Git de SGA con soporte de salto rápido.
+        Dashboard interactivo de repositorios Git y saltador rápido de proyectos.
     .EXAMPLE
-        repos           # Muestra el estado de todos los clones
-        repos -Fetch    # Hace git fetch silencioso antes de evaluar (alias: -f)
-        repos 1         # Salta a RSGA
-        repos 2         # Salta a RSGA_2
-        repos 3         # Salta a RSGA_3
+        repos           # Muestra el estado de todos los repositorios en Proyectos
+        repos -Fetch    # Hace git fetch silencioso en todos antes de evaluar (-f)
+        repos 1         # Salta directamente al repositorio #1 del listado
+        repos rsga      # Salta al repositorio que coincida con 'rsga'
+        repos nts -Nvim # Salta al repositorio 'nts' y lo abre en Neovim (-v)
+        repos 2 -Open   # Salta al repositorio #2 y abre el Explorador de Windows (-o)
     #>
     [CmdletBinding()]
     param(
@@ -326,57 +365,133 @@ function repo-status {
         [Alias('f')]
         [switch]$Fetch,
 
+        [Alias('v')]
+        [switch]$Nvim,
+
+        [Alias('o')]
+        [switch]$Open,
+
+        [switch]$Code,
+
         [Parameter()]
-        [string]$Path = $script:SgaRoot
+        [string]$Path = $global:ProjectsRoot
     )
 
-    # 1. Soporte de salto directo si se pasa un identificador
-    if ($Target) {
-        $cleanTarget = $Target.Trim().ToLower()
-        switch ($cleanTarget) {
-            { $_ -in @('1', 'rsga', 'sga') } {
-                rsga
-                Write-Host "● Posicionado en [RSGA]" -ForegroundColor Green
-                return
-            }
-            { $_ -in @('2', 'rsga2', 'rsga_2') } {
-                rsga2
-                Write-Host "● Posicionado en [RSGA_2]" -ForegroundColor Green
-                return
-            }
-            { $_ -in @('3', 'rsga3', 'rsga_3') } {
-                rsga3
-                Write-Host "● Posicionado en [RSGA_3]" -ForegroundColor Green
-                return
-            }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Warning "El directorio de proyectos '$Path' no existe. Configura `$global:ProjectsRoot o `$env:PROJECTS_DIR."
+        return
+    }
+
+    $allRepos = @(Get-ProfileGitRepositories -BasePath $Path)
+    if ($allRepos.Count -eq 0) {
+        $dirs = @(Get-ChildItem -LiteralPath $Path -Directory -ErrorAction SilentlyContinue)
+        if ($dirs.Count -eq 0) {
+            Write-Host "● No se encontraron repositorios ni carpetas en $Path." -ForegroundColor Yellow
+            return
         }
     }
 
-    if (-not (Test-Path -LiteralPath $Path)) {
-        Write-Warning "El directorio '$Path' no existe."
-        return
+    $doNavigate = {
+        param([string]$targetPath, [string]$displayName)
+        Set-Location $targetPath
+        Write-Host "● Posicionado en [$displayName]" -ForegroundColor Green
+
+        if ($Nvim) {
+            nvim .
+        } elseif ($Open) {
+            Invoke-Item $targetPath
+        } elseif ($Code) {
+            code .
+        }
     }
 
-    $dirs = @(Get-ChildItem -LiteralPath $Path -Directory | Where-Object { Test-Path (Join-Path $_.FullName '.git') })
-    if ($dirs.Count -eq 0) {
-        Write-Host "● No se encontraron repositorios Git en $Path." -ForegroundColor Yellow
-        return
+    # 1. Si se pasa un objetivo (Target)
+    if (-not [string]::IsNullOrWhiteSpace($Target)) {
+        $cleanTarget = $Target.Trim()
+
+        # A. Si es un número (índice 1-based)
+        if ($cleanTarget -match '^\d+$') {
+            $num = [int]$cleanTarget
+            if ($num -ge 1 -and $num -le $allRepos.Count) {
+                $sel = $allRepos[$num - 1]
+                $relName = ($sel.FullName.Substring($Path.Length).TrimStart('\', '/')).Replace('\', '/')
+                & $doNavigate $sel.FullName $relName
+                return
+            } else {
+                Write-Error "Índice $num fuera de rango (hay $($allRepos.Count) repositorios disponibles)."
+                return
+            }
+        }
+
+        # B. Búsqueda por nombre de repositorio (exacta o parcial)
+        $normalized = $cleanTarget.Replace('/', '\').ToLower()
+        $matchesList = @($allRepos | Where-Object {
+            $rel = ($_.FullName.Substring($Path.Length).TrimStart('\', '/')).ToLower()
+            $leaf = $_.Name.ToLower()
+            $rel -eq $normalized -or $leaf -eq $normalized -or $rel.Contains($normalized) -or $leaf.Contains($normalized)
+        })
+
+        if ($matchesList.Count -eq 1) {
+            $sel = $matchesList[0]
+            $relName = ($sel.FullName.Substring($Path.Length).TrimStart('\', '/')).Replace('\', '/')
+            & $doNavigate $sel.FullName $relName
+            return
+        }
+        elseif ($matchesList.Count -gt 1) {
+            $exact = @($matchesList | Where-Object { $_.Name.ToLower() -eq $normalized })
+            if ($exact.Count -eq 1) {
+                $sel = $exact[0]
+                $relName = ($sel.FullName.Substring($Path.Length).TrimStart('\', '/')).Replace('\', '/')
+                & $doNavigate $sel.FullName $relName
+                return
+            }
+
+            Write-Host "`nCoincidencias encontradas para '$cleanTarget':" -ForegroundColor Cyan
+            for ($i = 0; $i -lt $matchesList.Count; $i++) {
+                $m = $matchesList[$i]
+                $origIdx = $allRepos.IndexOf($m) + 1
+                $rel = ($m.FullName.Substring($Path.Length).TrimStart('\', '/')).Replace('\', '/')
+                Write-Host "  [$origIdx] $rel" -ForegroundColor White
+            }
+            Write-Host "`nUsa 'repos <#>' para saltar al deseado.`n" -ForegroundColor DarkGray
+            return
+        }
+        else {
+            $plainMatch = Get-ChildItem -LiteralPath $Path -Directory -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+                          Where-Object { $_.Name -like "*$cleanTarget*" } | Select-Object -First 1
+            if ($plainMatch) {
+                & $doNavigate $plainMatch.FullName $plainMatch.Name
+                return
+            }
+
+            Write-Host "● No se encontró ningún repositorio o proyecto que coincida con '$cleanTarget' en $Path" -ForegroundColor Yellow
+            return
+        }
     }
 
+    # 2. Renderizado del Dashboard de repositorios
     if ($Fetch) {
-        Write-Host "Sincronizando estado remoto (git fetch)..." -ForegroundColor DarkGray
-        foreach ($d in $dirs) {
+        Write-Host "Sincronizando estado remoto en $($allRepos.Count) repositorios (git fetch)..." -ForegroundColor DarkGray
+        foreach ($d in $allRepos) {
             git -C $d.FullName fetch -q 2>$null
         }
     }
 
-    Write-Host "`n=== Estado de Entornos SGA ===`n" -ForegroundColor DarkCyan
+    Write-Host "`n=== Repositorios de Proyectos ($Path) ===`n" -ForegroundColor DarkCyan
 
     $idx = 1
-    foreach ($d in $dirs) {
+    foreach ($d in $allRepos) {
         $p = $d.FullName
+        $relName = ($p.Substring($Path.Length).TrimStart('\', '/')).Replace('\', '/')
+        if ($relName.Length -gt 28) {
+            $relName = $relName.Substring(0, 25) + '...'
+        }
+
         $branch = (git -C $p branch --show-current 2>$null)
         if (-not $branch) { $branch = 'DETACHED' }
+        if ($branch.Length -gt 22) {
+            $branch = $branch.Substring(0, 19) + '...'
+        }
 
         $statusLines = @(git -C $p status --porcelain 2>$null)
         $staged = @($statusLines | Where-Object { $_ -match '^[MADRC]' }).Count
@@ -416,26 +531,43 @@ function repo-status {
         }
 
         $lastCommit = (git -C $p log -1 --format='%h (%cr) %s' 2>$null)
-        if ($lastCommit -and $lastCommit.Length -gt 60) {
-            $lastCommit = $lastCommit.Substring(0, 57) + '...'
+        if ($lastCommit -and $lastCommit.Length -gt 65) {
+            $lastCommit = $lastCommit.Substring(0, 62) + '...'
         }
 
-        $tag = "[$idx] $($d.Name)".PadRight(12)
-        Write-Host $tag -ForegroundColor Yellow -NoNewline
-        Write-Host (" " + $branch).PadRight(32) -ForegroundColor Cyan -NoNewline
+        $numTag = "[$idx]".PadLeft(4)
+        Write-Host "$numTag " -ForegroundColor DarkGray -NoNewline
+        Write-Host $relName.PadRight(29) -ForegroundColor Yellow -NoNewline
+        Write-Host (" " + $branch).PadRight(24) -ForegroundColor Cyan -NoNewline
         Write-Host " | " -ForegroundColor DarkGray -NoNewline
         Write-Host $localStatus.PadRight(18) -ForegroundColor $localColor -NoNewline
         Write-Host " | " -ForegroundColor DarkGray -NoNewline
         Write-Host $syncStatus -ForegroundColor $syncColor
         if ($lastCommit) {
-            Write-Host "     └─ $lastCommit" -ForegroundColor DarkGray
+            Write-Host "       └─ $lastCommit" -ForegroundColor DarkGray
         }
 
         $idx++
     }
 
-    Write-Host "`nTip: Usa 'repos <1|2|3>' para saltar directamente al clon deseado o '-f' para refrescar origin.`n" -ForegroundColor DarkGray
+    Write-Host "`nTip: Usa 'repos <#>' o 'repos <nombre>' para saltar a un repositorio (-f para refrescar origin).`n" -ForegroundColor DarkGray
 }
 Set-Alias repos repo-status
-Set-Alias sga-status repo-status
+Set-Alias proj  repo-status
+
+Register-ArgumentCompleter -CommandName repos,repo-status,proj -ParameterName Target -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    $basePath = $global:ProjectsRoot
+    $all = @(Get-ProfileGitRepositories -BasePath $basePath)
+    foreach ($r in $all) {
+        $relName = ($r.FullName.Substring($basePath.Length).TrimStart('\', '/')).Replace('\', '/')
+        $leafName = $r.Name
+        if ($relName -like "$wordToComplete*" -or $leafName -like "$wordToComplete*") {
+            [System.Management.Automation.CompletionResult]::new($leafName, $leafName, 'ParameterValue', "Repo: $relName")
+            if ($relName -ne $leafName) {
+                [System.Management.Automation.CompletionResult]::new($relName, $relName, 'ParameterValue', "Repo: $relName")
+            }
+        }
+    }
+}
 

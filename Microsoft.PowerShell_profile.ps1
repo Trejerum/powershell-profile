@@ -5,9 +5,9 @@
 # carpeta 'profile.d/' para garantizar maxima mantenibilidad y aislamiento:
 #
 #   profile.d/00-env.ps1         - Codificacion UTF-8, variables de entorno y PSReadLine
-#   profile.d/10-navigation.ps1  - Atajos de carpetas, proyectos SGA y recarga
+#   profile.d/10-navigation.ps1  - Atajos de carpetas, proyectos y recarga
 #   profile.d/15-notes.ps1       - Gestor de notas, diario developer, captura y Ripgrep
-#   profile.d/20-git.ps1         - Alias de Git, posh-git, vmod, vd y repo-status
+#   profile.d/20-git.ps1         - Alias de Git, posh-git, vmod, vd y hub de repos (repos)
 #   profile.d/30-sql.ps1         - ADO.NET SQL Toolkit, q, sesiones y autocompletado
 #   profile.d/40-utils.ps1       - Herramientas de sistema, red, procesos e historial
 #   profile.d/50-help.ps1        - Centro de mando interactivo (phelp, ?p)
@@ -32,6 +32,17 @@ if (Test-Path -Path $script:ProfileD) {
         catch {
             Write-Warning "Error al cargar modulo $($_.Name): $_"
         }
+    }
+}
+
+# Carga de perfil local opcional (personalizaciones y atajos de máquina, no rastreados en Git)
+$script:LocalProfile = Join-Path -Path $script:ProfileDir -ChildPath "profile.local.ps1"
+if (Test-Path -LiteralPath $script:LocalProfile) {
+    try {
+        . $script:LocalProfile
+    }
+    catch {
+        Write-Warning "Error al cargar modulo local profile.local.ps1: $_"
     }
 }
 
