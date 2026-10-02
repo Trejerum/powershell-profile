@@ -42,6 +42,8 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "lnotes"; Sintaxis = "lnotes [n] [-Open n]"; Detalle = "Dashboard de notas recientes con fechas relativas y primeros puntos tratados (alias: recent-notes)"; Ejemplos = @("lnotes", "lnotes 5", "lnotes -Open 2") }
         [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "note-sql"; Sintaxis = "note-sql <nombre>"; Detalle = "Crea un script SQL fechado en Documentos\Notes\sql y lo abre en Neovim (alias: nsql)"; Ejemplos = @("note-sql fix_inventario") }
         [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "notes-sync"; Sintaxis = "notes-sync [mensaje]"; Detalle = "Registra y sincroniza todos los cambios de notas en el repo Git local (alias: nsync, note-save)"; Ejemplos = @("notes-sync", "notes-sync 'Reunión sprint'") }
+        [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "todo"; Sintaxis = "todo [tarea] [-Done] [-Open n] [-Check n]"; Detalle = "Gestor interactivo de tareas/checklists en notas (- [ ]) con apertura o marcado directo (alias: todos, tasks)"; Ejemplos = @("todo", "todo 'Revisar stock'", "todo -Today", "todo -Check 1", "todo -Open 2") }
+        [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "note-roll"; Sintaxis = "note-roll [-DaysAgo n] [-MarkMoved]"; Detalle = "Traspasa automáticamente las tareas no hechas (- [ ]) de la nota anterior a la de hoy (alias: note-rollover, roll-todos)"; Ejemplos = @("note-roll", "note-roll -MarkMoved") }
 
         # 2. Archivos & Búsqueda
         [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "v"; Sintaxis = "v [ruta] | <cmd> | v"; Detalle = "Wrapper inteligente de Neovim: abre ficheros o vuelca salidas de pipeline a buffer temporal"; Ejemplos = @("v Program.cs", "gs | v", "q 'SELECT TOP 10 * FROM Articulos' | v") }
@@ -169,4 +171,5 @@ function Show-ProfileHelp {
 Set-Alias phelp Show-ProfileHelp
 Set-Alias '?p'  Show-ProfileHelp
  
+
 

@@ -70,6 +70,17 @@ El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura r�
 - **`lnotes [n] [-Open n]` (alias `recent-notes`)**: Muestra un dashboard con las últimas N notas diarias, tiempo relativo (*"Hoy"*, *"Ayer"*, *"Hace 4 días"*), tamaño y las primeras líneas tratadas. Permite abrir directamente una nota con `-Open <n>` o `note <n>`.
 - **`note-sql <nombre>` (alias `nsql`)**: Crea un script SQL fechado (`YYYYMMDD_nombre.sql`) en `Documentos\Notes\sql\` con cabecera y plantilla, abriéndolo en Neovim.
 - **`notes-sync [mensaje]` (alias `nsync`, `note-commit`, `note-save`)**: Añade todos los cambios de tus notas y crea un commit en el repositorio Git local de `Documentos\Notes`.
+- **`todo` (alias `todos`, `tasks`)**:
+  - `todo`: Escanea las notas de los últimos 7 días y muestra tus tareas pendientes (`- [ ]`) agrupadas por fecha con tiempo relativo y número de línea.
+  - `todo "texto de la tarea"`: Añade una nueva tarea a la nota de hoy (`- [ ] [HH:mm] <tarea>`).
+  - `todo -Today`: Muestra solo las tareas de la nota de hoy.
+  - `todo -Done` / `todo -All`: Muestra también las tareas completadas (`- [x]`) en verde.
+  - `todo -Open <n>`: Abre **Neovim directamente en la línea exacta** donde está la tarea indicada.
+  - `todo -Check <n>`: Marca la tarea `[n]` como **completada** (`- [x]`) en el archivo markdown sin necesidad de abrir Neovim.
+  - `todo -Uncheck <n>`: Desmarca la tarea `[n]` devolviéndola a pendiente (`- [ ]`).
+- **`note-roll` (alias `note-rollover`, `roll-todos`)**:
+  - Revisa la nota anterior (ayer o último día laboral) y **traspasa automáticamente a hoy las tareas no terminadas** bajo el encabezado `## Pendientes de YYYYMMDD`. Evita duplicados si se ejecuta más de una vez.
+  - `note-roll -MarkMoved`: Marca las tareas en la nota origen como migradas (`- [>]`).
 
 ---
 

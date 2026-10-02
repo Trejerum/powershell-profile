@@ -437,4 +437,353 @@ function notes {
     }
 }
 
+# ------------------------------------------------------------------------------
+# 7. GESTOR DE TAREAS: todo (alias: todos, tasks)
+# ------------------------------------------------------------------------------
+function Get-NoteTasks {
+    param(
+        [int]$Days = 7,
+        [switch]$IncludeDone,
+        [switch]$TodayOnly
+    )
+
+    $notesDir = $global:NotesDir
+    $todayStr = Get-Date -Format 'yyyyMMdd'
+    $today = (Get-Date).Date
+
+    $query = @(Get-ChildItem -Path $notesDir -Filter "*.md" |
+               Where-Object { $_.BaseName -match '^\d{8}$' } |
+               Sort-Object Name -Descending)
+
+    if ($TodayOnly) {
+        $query = @($query | Where-Object { $_.BaseName -eq $todayStr })
+    }
+    elseif ($Days -gt 0) {
+        $cutoffDate = $today.AddDays(-$Days)
+        $query = @($query | Where-Object {
+            try {
+                $d = [DateTime]::ParseExact($_.BaseName, 'yyyyMMdd', [System.Globalization.CultureInfo]::InvariantCulture)
+                $d -ge $cutoffDate
+            } catch { $false }
+        })
+    }
+
+    $results = @()
+    $taskRegex = '^\s*[-*]\s*\[([ xX>~])\]\s*(.*)$'
+
+    foreach ($file in $query) {
+        $lines = [System.IO.File]::ReadAllLines($file.FullName, [System.Text.Encoding]::UTF8)
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i]
+            if ($line -match $taskRegex) {
+                $marker = $matches[1]
+                $desc = $matches[2].Trim()
+                $isDone = ($marker -match '[xX]')
+                $isMoved = ($marker -eq '>')
+
+                if ($IncludeDone -or (-not $isDone -and -not $isMoved)) {
+                    $results += [PSCustomObject]@{
+                        File       = $file.FullName
+                        FileName   = $file.Name
+                        BaseName   = $file.BaseName
+                        LineNumber = ($i + 1)
+                        Done       = $isDone
+                        Moved      = $isMoved
+                        Text       = $desc
+                        RawLine    = $line
+                    }
+                }
+            }
+        }
+    }
+
+    return $results
+}
+
+function todo {
+    <#
+    .SYNOPSIS
+        Gestor interactivo de tareas y pendientes en notas diarias (- [ ]).
+    .EXAMPLE
+        todo                                # Lista tareas pendientes de los últimos 7 días
+        todo "Revisar stock en pre"         # Añade una nueva tarea a la nota de hoy
+        todo -Today                         # Solo tareas de hoy
+        todo -Done                          # Muestra también completadas (- [x])
+        todo -Days 14                       # Revisa notas de los últimos 14 días
+        todo -Open 2                        # Abre Neovim en la línea exacta de la tarea 2
+        todo -Check 2                       # Marca la tarea 2 como hecha en el archivo markdown
+        todo -Uncheck 2                     # Desmarca la tarea 2
+    #>
+    [CmdletBinding(DefaultParameterSetName = 'List')]
+    param(
+        [Parameter(Position = 0, ParameterSetName = 'Add', ValueFromPipeline = $true)]
+        [string]$Task,
+
+        [Parameter(ParameterSetName = 'List')]
+        [int]$Days = 7,
+
+        [Parameter(ParameterSetName = 'List')]
+        [switch]$Today,
+
+        [Parameter(ParameterSetName = 'List')]
+        [switch]$Done,
+
+        [Parameter(ParameterSetName = 'List')]
+        [switch]$All,
+
+        [Parameter(ParameterSetName = 'Open')]
+        [int]$Open,
+
+        [Parameter(ParameterSetName = 'Check')]
+        [int]$Check,
+
+        [Parameter(ParameterSetName = 'Uncheck')]
+        [int]$Uncheck
+    )
+
+    $notesDir = $global:NotesDir
+    $todayStr = Get-Date -Format 'yyyyMMdd'
+    $todayFile = Join-Path $notesDir "$todayStr.md"
+
+    # Caso 1: Añadir tarea
+    if ($PSCmdlet.ParameterSetName -eq 'Add' -and $Task) {
+        if (-not (Test-Path -LiteralPath $todayFile)) {
+            $header = "# $todayStr`r`n`r`n"
+            [System.IO.File]::WriteAllText($todayFile, $header, [System.Text.Encoding]::UTF8)
+        }
+        $timeStr = Get-Date -Format 'HH:mm'
+        $newLine = "- [ ] [$timeStr] $Task"
+        Add-Content -LiteralPath $todayFile -Value $newLine -Encoding UTF8
+        Write-Host "✓ Tarea añadida en $todayStr.md: " -ForegroundColor Green -NoNewline
+        Write-Host "[$timeStr] $Task" -ForegroundColor White
+        return
+    }
+
+    # Obtener tareas según contexto
+    $includeCompleted = ($Done -or $All -or $Uncheck -or $Open)
+    $scannedDays = if ($All) { 0 } else { $Days }
+    $tasks = @(Get-NoteTasks -Days $scannedDays -IncludeDone:$includeCompleted -TodayOnly:$Today)
+
+    # Caso 2: Abrir en Neovim
+    if ($Open) {
+        if ($Open -ge 1 -and $Open -le $tasks.Count) {
+            $t = $tasks[$Open - 1]
+            Write-Host "● Abriendo $($t.FileName) en línea $($t.LineNumber)..." -ForegroundColor Cyan
+            nvim "+$($t.LineNumber)" "$($t.File)"
+            return
+        } else {
+            Write-Error "Índice $Open fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Caso 3: Marcar tarea como completada (-Check)
+    if ($Check) {
+        if ($Check -ge 1 -and $Check -le $tasks.Count) {
+            $t = $tasks[$Check - 1]
+            $fileLines = [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
+            $idx = $t.LineNumber - 1
+            if ($fileLines[$idx] -match '^\s*[-*]\s*\[ \]') {
+                $fileLines[$idx] = $fileLines[$idx] -replace '^\s*[-*]\s*\[ \]', '- [x]'
+                $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+                $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+                [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+                Write-Host "✓ Tarea [$Check] marcada como COMPLETADA en $($t.FileName):" -ForegroundColor Green
+                Write-Host "  $($t.Text)" -ForegroundColor White
+            } else {
+                Write-Host "ℹ La tarea ya estaba completada o modificada en $($t.FileName)." -ForegroundColor Yellow
+            }
+            return
+        } else {
+            Write-Error "Índice $Check fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Caso 4: Desmarcar tarea (-Uncheck)
+    if ($Uncheck) {
+        if ($Uncheck -ge 1 -and $Uncheck -le $tasks.Count) {
+            $t = $tasks[$Uncheck - 1]
+            $fileLines = [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
+            $idx = $t.LineNumber - 1
+            if ($fileLines[$idx] -match '^\s*[-*]\s*\[[xX]\]') {
+                $fileLines[$idx] = $fileLines[$idx] -replace '^\s*[-*]\s*\[[xX]\]', '- [ ]'
+                $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+                $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+                [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+                Write-Host "✓ Tarea [$Uncheck] desmarcada como PENDIENTE en $($t.FileName):" -ForegroundColor Cyan
+                Write-Host "  $($t.Text)" -ForegroundColor White
+            } else {
+                Write-Host "ℹ La tarea no estaba marcada como completada en $($t.FileName)." -ForegroundColor Yellow
+            }
+            return
+        } else {
+            Write-Error "Índice $Uncheck fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Caso 5: Listar tareas en pantalla
+    if ($tasks.Count -eq 0) {
+        Write-Host "`n✓ No hay tareas pendientes en las notas recientes. ¡Todo al día!`n" -ForegroundColor Green
+        return
+    }
+
+    $titleFilter = if ($Today) { "Hoy" } elseif ($All) { "Historial completo" } else { "Últimos $Days días" }
+    Write-Host "`n=== Tareas en Notas ($titleFilter) ===`n" -ForegroundColor DarkCyan
+
+    $groups = $tasks | Group-Object BaseName
+    $taskIdx = 1
+
+    foreach ($g in $groups) {
+        $dateStr = $g.Name
+        $fileDate = [DateTime]::ParseExact($dateStr, 'yyyyMMdd', [System.Globalization.CultureInfo]::InvariantCulture)
+        $diffDays = ((Get-Date).Date - $fileDate.Date).Days
+        $relLabel = switch ($diffDays) {
+            0 { "Hoy" }
+            1 { "Ayer" }
+            default { "Hace $diffDays días" }
+        }
+
+        Write-Host " [$dateStr ($relLabel)]" -ForegroundColor Yellow
+        foreach ($item in $g.Group) {
+            $numTag = "  [$taskIdx]".PadRight(8)
+            $box = if ($item.Done) { "[x]" } else { "[ ]" }
+            $boxColor = if ($item.Done) { "Green" } else { "Cyan" }
+            $textColor = if ($item.Done) { "DarkGray" } else { "White" }
+
+            Write-Host $numTag -ForegroundColor DarkGray -NoNewline
+            Write-Host "$box " -ForegroundColor $boxColor -NoNewline
+            Write-Host "$($item.Text)" -ForegroundColor $textColor -NoNewline
+            Write-Host " (L:$($item.LineNumber))" -ForegroundColor DarkGray
+
+            $taskIdx++
+        }
+        Write-Host ""
+    }
+
+    $pendingCount = @($tasks | Where-Object { -not $_.Done }).Count
+    $doneCount = @($tasks | Where-Object { $_.Done }).Count
+
+    Write-Host "Total: $pendingCount pendiente(s)" -NoNewline -ForegroundColor White
+    if ($doneCount -gt 0) {
+        Write-Host ", $doneCount completada(s)" -NoNewline -ForegroundColor DarkGray
+    }
+    Write-Host "."
+    Write-Host "Tip: Usa 'todo -Check <n>' para tachar, 'todo -Open <n>' para abrir en Neovim o 'note-roll' para traspasar pendientes a hoy.`n" -ForegroundColor DarkGray
+}
+Set-Alias todos todo
+Set-Alias tasks todo
+
+# ------------------------------------------------------------------------------
+# 8. ROLLOVER DE TAREAS: note-roll (alias: note-rollover, roll-todos)
+# ------------------------------------------------------------------------------
+function note-roll {
+    <#
+    .SYNOPSIS
+        Traspasa automáticamente las tareas no completadas (- [ ]) del día anterior a la nota de hoy.
+    .EXAMPLE
+        note-roll
+        note-roll -DaysAgo 2
+        note-roll -MarkMoved
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [int]$DaysAgo = 0,
+
+        [Parameter()]
+        [switch]$MarkMoved
+    )
+
+    $notesDir = $global:NotesDir
+    $todayStr = Get-Date -Format 'yyyyMMdd'
+    $todayFile = Join-Path $notesDir "$todayStr.md"
+
+    # Encontrar la nota anterior relevante (ayer o último día con nota registrada)
+    $candidateFiles = @(Get-ChildItem -Path $notesDir -Filter "*.md" |
+                        Where-Object { $_.BaseName -match '^\d{8}$' -and $_.BaseName -lt $todayStr } |
+                        Sort-Object Name -Descending)
+
+    if ($candidateFiles.Count -eq 0) {
+        Write-Host "ℹ No se encontraron notas anteriores para traspasar tareas." -ForegroundColor Yellow
+        return
+    }
+
+    $prevFile = if ($DaysAgo -gt 0 -and $DaysAgo -le $candidateFiles.Count) {
+        $candidateFiles[$DaysAgo - 1]
+    } else {
+        $candidateFiles[0]
+    }
+
+    $prevStr = $prevFile.BaseName
+    $prevLines = [System.IO.File]::ReadAllLines($prevFile.FullName, [System.Text.Encoding]::UTF8)
+
+    $taskRegex = '^\s*[-*]\s*\[ \]\s*(.*)$'
+    $pendingTasks = @()
+    $pendingIndices = @()
+
+    for ($i = 0; $i -lt $prevLines.Count; $i++) {
+        if ($prevLines[$i] -match $taskRegex) {
+            $pendingTasks += $matches[1].Trim()
+            $pendingIndices += $i
+        }
+    }
+
+    if ($pendingTasks.Count -eq 0) {
+        Write-Host "✓ No hay tareas pendientes en la nota anterior ($prevStr.md). ¡Todo al día!" -ForegroundColor Green
+        return
+    }
+
+    # Asegurar nota de hoy
+    if (-not (Test-Path -LiteralPath $todayFile)) {
+        $header = "# $todayStr`r`n`r`n"
+        [System.IO.File]::WriteAllText($todayFile, $header, [System.Text.Encoding]::UTF8)
+        Write-Host "● Creada nueva nota diaria: $todayStr.md" -ForegroundColor Cyan
+    }
+
+    $todayContent = [System.IO.File]::ReadAllText($todayFile, [System.Text.Encoding]::UTF8)
+
+    # Filtrar las tareas que ya estén traspasadas a hoy para evitar duplicados
+    $toAdd = @()
+    foreach ($task in $pendingTasks) {
+        if (-not ($todayContent.Contains($task))) {
+            $toAdd += "- [ ] $task"
+        }
+    }
+
+    if ($toAdd.Count -eq 0) {
+        Write-Host "ℹ Todas las tareas pendientes de $prevStr.md ya estaban presentes en $todayStr.md." -ForegroundColor Yellow
+        return
+    }
+
+    # Agregar encabezado de sección en hoy si no existe
+    $appendLines = @()
+    $appendLines += ""
+    $appendLines += "## Pendientes de $prevStr"
+    $appendLines += $toAdd
+
+    $crlfToAppend = ($appendLines -join "`r`n") + "`r`n"
+    [System.IO.File]::AppendAllText($todayFile, $crlfToAppend, [System.Text.Encoding]::UTF8)
+
+    # Si se pide marcar en el origen (-MarkMoved)
+    if ($MarkMoved) {
+        foreach ($idx in $pendingIndices) {
+            $prevLines[$idx] = $prevLines[$idx] -replace '^\s*[-*]\s*\[ \]', '- [>]'
+        }
+        $crlfPrev = ($prevLines -join "`r`n") + "`r`n"
+        $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+        [System.IO.File]::WriteAllText($prevFile.FullName, $crlfPrev, $utf8Bom)
+    }
+
+    Write-Host "✓ $($toAdd.Count) tarea(s) pendiente(s) de $prevStr.md traspasadas a $todayStr.md:" -ForegroundColor Green
+    foreach ($item in $toAdd) {
+        Write-Host "  • $($item -replace '^-\s*\[ \]\s*', '')" -ForegroundColor White
+    }
+}
+Set-Alias note-rollover note-roll
+Set-Alias roll-todos note-roll
+
+
+
 
