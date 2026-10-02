@@ -462,3 +462,103 @@ function hist {
     }
     $entries | Select-Object -Last $Last | Format-Table Id, CommandLine -AutoSize
 }
+
+# ==============================================================================
+# INTEGRACIÓN DIFUSA CON FZF (SI ESTÁ INSTALADO)
+# ==============================================================================
+
+# Búsqueda difusa interactiva de archivos y apertura en Neovim
+function fe {
+    <#
+    .SYNOPSIS
+        Búsqueda interactiva difusa de archivos con fzf y apertura en Neovim.
+    .EXAMPLE
+        fe
+        fe src/
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Path = "."
+    )
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
+        Write-Host "● fzf no está instalado en el sistema." -ForegroundColor Yellow
+        Write-Host "  Instálalo fácilmente con: winget install junegunn.fzf" -ForegroundColor DarkGray
+        return
+    }
+
+    $selected = if (Get-Command fd -ErrorAction SilentlyContinue) {
+        fd --type f --hidden --exclude .git . $Path | fzf --preview "head -n 40 {}" --header="[Enter] Abrir en Neovim | [ESC] Salir"
+    } elseif (Get-Command rg -ErrorAction SilentlyContinue) {
+        rg --files $Path 2>$null | fzf --preview "head -n 40 {}" --header="[Enter] Abrir en Neovim | [ESC] Salir"
+    } else {
+        Get-ChildItem -LiteralPath $Path -File -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName | fzf --header="[Enter] Abrir en Neovim | [ESC] Salir"
+    }
+
+    if ($selected) {
+        nvim $selected
+    }
+}
+Set-Alias vf fe
+
+# Búsqueda difusa interactiva de carpetas y navegación (cd)
+function fcd {
+    <#
+    .SYNOPSIS
+        Búsqueda interactiva difusa de carpetas con fzf y cambio automático de directorio.
+    .EXAMPLE
+        fcd
+        fcd C:\Proyectos
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Path = "."
+    )
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
+        Write-Host "● fzf no está instalado en el sistema." -ForegroundColor Yellow
+        Write-Host "  Instálalo fácilmente con: winget install junegunn.fzf" -ForegroundColor DarkGray
+        return
+    }
+
+    $dirs = if (Get-Command fd -ErrorAction SilentlyContinue) {
+        fd --type d --hidden --exclude .git . $Path
+    } else {
+        Get-ChildItem -LiteralPath $Path -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+    }
+
+    $selected = $dirs | fzf --header="[Enter] Cambiar de directorio | [ESC] Salir"
+    if ($selected -and (Test-Path -LiteralPath $selected)) {
+        Set-Location -LiteralPath $selected
+        Write-Host "● Posicionado en: $selected" -ForegroundColor Green
+    }
+}
+
+# Búsqueda difusa interactiva en el historial de comandos
+function fhist {
+    <#
+    .SYNOPSIS
+        Búsqueda interactiva difusa en el historial de PowerShell con fzf.
+    #>
+    [CmdletBinding()]
+    param()
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
+        Write-Host "● fzf no está instalado en el sistema." -ForegroundColor Yellow
+        Write-Host "  Instálalo fácilmente con: winget install junegunn.fzf" -ForegroundColor DarkGray
+        return
+    }
+
+    $historyFile = $null
+    try { $historyFile = (Get-PSReadLineOption).HistorySavePath } catch { }
+    $commands = if ($historyFile -and (Test-Path -LiteralPath $historyFile)) {
+        Get-Content -LiteralPath $historyFile -Tail 1500
+    } else {
+        (Get-History | Select-Object -ExpandProperty CommandLine)
+    }
+
+    $selected = $commands | Select-Object -Unique | fzf --tac --header="[Enter] Ejecutar comando | [ESC] Salir"
+    if ($selected) {
+        Write-Host "Ejecutando: $selected" -ForegroundColor Cyan
+        Invoke-Expression $selected
+    }
+}

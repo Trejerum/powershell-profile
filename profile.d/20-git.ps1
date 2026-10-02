@@ -54,7 +54,39 @@ function gpsup {
 }
 Set-Alias -Name gpu -Value gpsup -ErrorAction SilentlyContinue
 Set-Alias -Name gpushu -Value gpsup -ErrorAction SilentlyContinue
-function gco   { git checkout $args }
+# Búsqueda difusa interactiva de ramas Git con fzf (fco / fbr)
+function fco {
+    <#
+    .SYNOPSIS
+        Selector interactivo difuso de ramas Git con fzf para checkout inmediato.
+    #>
+    [CmdletBinding()]
+    param()
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
+        Write-Host "● fzf no está instalado. Instálalo con: winget install junegunn.fzf" -ForegroundColor Yellow
+        return
+    }
+    $branches = git branch --all --color=never 2>$null | ForEach-Object {
+        $_.Trim().Replace('* ', '').Replace('remotes/origin/', '')
+    } | Where-Object { $_ -notmatch 'HEAD ->' } | Select-Object -Unique
+    if (-not $branches) {
+        Write-Host "● No se detectaron ramas en este repositorio." -ForegroundColor Yellow
+        return
+    }
+    $selected = $branches | fzf --header="[Enter] Checkout a rama seleccionada | [ESC] Cancelar"
+    if ($selected) {
+        git checkout $selected.Trim()
+    }
+}
+Set-Alias fbr fco
+
+function gco {
+    if ($args.Count -eq 0 -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
+        fco
+    } else {
+        git checkout @args
+    }
+}
 function ga    { git add . $args }
 function glog  { git log --oneline --graph --decorate -n 10 $args }
 function gme   { git for-each-ref --format="%(committername) | %(refname:short)" refs/remotes/ | Select-String "diego.corral" }
@@ -373,6 +405,9 @@ function repo-status {
 
         [switch]$Code,
 
+        [Alias('i')]
+        [switch]$Interactive,
+
         [Parameter()]
         [string]$Path = $global:ProjectsRoot
     )
@@ -402,6 +437,33 @@ function repo-status {
             Invoke-Item $targetPath
         } elseif ($Code) {
             code .
+        }
+    }
+
+    # Modo interactivo con fzf (-i)
+    if ($Interactive) {
+        if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
+            Write-Host "● fzf no está instalado. Instálalo con: winget install junegunn.fzf" -ForegroundColor Yellow
+        } else {
+            $fzfItems = @(foreach ($r in $allRepos) {
+                $rel = ($r.FullName.Substring($Path.Length).TrimStart('\', '/')).Replace('\', '/')
+                $branch = (git -C $r.FullName branch --show-current 2>$null)
+                if (-not $branch) { $branch = 'DETACHED' }
+                "$rel [$branch]"
+            })
+            $selected = $fzfItems | fzf --header="[Enter] Navegar al repositorio | [ESC] Salir"
+            if ($selected) {
+                $cleanRel = ($selected -split '\s+\[')[0]
+                $matchRepo = $allRepos | Where-Object {
+                    $rel = ($_.FullName.Substring($Path.Length).TrimStart('\', '/')).Replace('\', '/')
+                    $rel -eq $cleanRel
+                } | Select-Object -First 1
+                if ($matchRepo) {
+                    & $doNavigate $matchRepo.FullName $matchRepo.Name
+                    return
+                }
+            }
+            return
         }
     }
 

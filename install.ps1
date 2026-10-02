@@ -78,6 +78,7 @@ $cliTools = @(
     @{ Cmd = "nvim"; Name = "Neovim"; Winget = "Neovim.Neovim" }
     @{ Cmd = "rg";   Name = "Ripgrep"; Winget = "BurntSushi.ripgrep.MSVC" }
     @{ Cmd = "lg";   Name = "Lazygit"; Winget = "jesseduffield.lazygit" }
+    @{ Cmd = "fzf";  Name = "FZF (Fuzzy Finder)"; Winget = "junegunn.fzf" }
     @{ Cmd = "7z";   Name = "7-Zip";   Winget = "7zip.7zip" }
 )
 
