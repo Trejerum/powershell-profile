@@ -19,6 +19,30 @@ El perfil detecta automáticamente las herramientas instaladas y activa sus acel
 
 ---
 
+## 📦 Instalación y Puesta a Punto (`install.ps1`)
+
+Para clonar y poner a punto el perfil en cualquier ordenador nuevo sin arrastrar binarios pesados en Git:
+
+```powershell
+# 1. Clonar el repositorio en la carpeta del perfil de PowerShell
+git clone <URL_DEL_REPO> "$HOME\Documents\WindowsPowerShell"
+
+# 2. Entrar en el directorio y ejecutar el aprovisionador
+cd "$HOME\Documents\WindowsPowerShell"
+.\install.ps1
+
+# 3. Recargar la consola para activar el perfil
+. $PROFILE
+```
+
+El script [`install.ps1`](file:///C:/Users/diego.corral/OneDrive%20-%20PKF%20ATTEST/Documentos/WindowsPowerShell/install.ps1):
+- Configura TLS 1.2 y el proveedor NuGet.
+- Instala el módulo oficial `posh-git` desde la **PowerShell Gallery** (`PSGallery`).
+- Inicializa tu [`sql-connections.json`](file:///C:/Users/diego.corral/OneDrive%20-%20PKF%20ATTEST/Documentos/WindowsPowerShell/sql-connections.json) a partir de [`sql-connections.example.json`](file:///C:/Users/diego.corral/OneDrive%20-%20PKF%20ATTEST/Documentos/WindowsPowerShell/sql-connections.example.json) si aún no existe.
+- Comprueba la disponibilidad de Neovim, Ripgrep, Lazygit y 7-Zip, sugiriendo comandos de instalación rápida con `winget`.
+
+---
+
 ## 📂 Arquitectura Modular (`profile.d/`)
 
 El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.ps1`) que importa de forma ordenada y aislada los módulos temáticos ubicados en el directorio `profile.d/`. Esto garantiza que un fallo puntual nunca bloquee la consola y facilita enormemente el mantenimiento y control de versiones en Git:

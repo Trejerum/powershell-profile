@@ -1,6 +1,9 @@
 # Conexiones locales a bases de datos (credenciales, servidores internos)
 sql-connections.json
 
+# Módulos de PowerShell instalados (se gestionan vía install.ps1 / Install-Module)
+Modules/
+
 # Archivos temporales de Neovim y Windows
 *.tmp
 *.swp
