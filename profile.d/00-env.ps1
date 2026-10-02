@@ -24,4 +24,18 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
 
     # Edición visual de la línea de comandos con Neovim (Ctrl+X, Ctrl+E)
     Set-PSReadLineKeyHandler -Chord 'Ctrl+x,Ctrl+e' -Function ViEditVisually
+
+    # Atajos mejorados de navegación y edición de palabras
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+Backspace' -Function BackwardKillWord -ErrorAction SilentlyContinue
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+Delete'    -Function KillWord -ErrorAction SilentlyContinue
+
+    # Predictive IntelliSense & Autosuggestions (requiere PSReadLine 2.2+)
+    $psrlModule = Get-Module PSReadLine
+    if ($psrlModule -and $psrlModule.Version -ge [Version]'2.2.0') {
+        try {
+            Set-PSReadLineOption -PredictionSource History
+            Set-PSReadLineOption -PredictionViewStyle InlineView
+            Set-PSReadLineKeyHandler -Key F2 -Function SwitchPredictionView
+        } catch { }
+    }
 }

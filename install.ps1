@@ -31,24 +31,28 @@ catch {
 
 # 3. Instalación de módulos PowerShell necesarios
 $requiredModules = @(
-    @{ Name = "posh-git"; Description = "Prompt con estado de Git y autocompletado avanzado" }
+    @{ Name = "posh-git";   Description = "Prompt con estado de Git y autocompletado avanzado"; MinVersion = "0.7.0" }
+    @{ Name = "PSReadLine"; Description = "Autocompletado predictivo inteligente (versión 2.2+)"; MinVersion = "2.2.6" }
 )
 
 foreach ($m in $requiredModules) {
     $modName = $m.Name
     $modDesc = $m.Description
+    $minVer  = if ($m.MinVersion) { [Version]$m.MinVersion } else { $null }
 
-    if (Get-Module -ListAvailable -Name $modName) {
-        Write-Host "✓ Módulo '$modName' ($modDesc) ya está instalado." -ForegroundColor Green
+    $installed = Get-Module -ListAvailable -Name $modName | Sort-Object Version -Descending | Select-Object -First 1
+    if ($installed -and (-not $minVer -or $installed.Version -ge $minVer)) {
+        Write-Host "✓ Módulo '$modName' ($($installed.Version)) ($modDesc) ya está instalado." -ForegroundColor Green
     }
     else {
-        Write-Host "● Instalando módulo '$modName' ($modDesc)..." -ForegroundColor Cyan
+        $actionText = if ($installed) { "Actualizando" } else { "Instalando" }
+        Write-Host "● $actionText módulo '$modName' ($modDesc)..." -ForegroundColor Cyan
         try {
             Install-Module -Name $modName -Scope CurrentUser -Force -SkipPublisherCheck -AllowClobber
-            Write-Host "✓ Módulo '$modName' instalado con éxito." -ForegroundColor Green
+            Write-Host "✓ Módulo '$modName' instalado/actualizado con éxito." -ForegroundColor Green
         }
         catch {
-            Write-Error "Fallo al instalar '$modName': $_"
+            Write-Error "Fallo al instalar/actualizar '$modName': $_"
         }
     }
 }
