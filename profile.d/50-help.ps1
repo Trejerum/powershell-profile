@@ -22,6 +22,7 @@ function Show-ProfileHelp {
     $commands = @(
         # 1. Navegación & Entorno
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "proj"; Sintaxis = "proj [nombre]"; Detalle = "Navega dinámicamente a cualquier subproyecto con autocompletado <Tab> (alias de repos)"; Ejemplos = @("proj", "proj MiProyecto", "proj ApiService") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "scratch"; Sintaxis = "scratch [nombre] [-List] [-Clean n] [-v]"; Detalle = "Crea o navega a un sandbox desechable fechado en Documentos\Scratch (alias: sandbox)"; Ejemplos = @("scratch", "scratch test-api", "scratch -List", "scratch -Clean 7", "scratch -v") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "profile"; Sintaxis = "profile"; Detalle = "Navega a la carpeta física del perfil de PowerShell"; Ejemplos = @("profile") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "notes"; Sintaxis = "notes"; Detalle = "Navega a la carpeta de notas personales (`$HOME\Documentos\Notes)"; Ejemplos = @("notes") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = ".."; Sintaxis = "..  |  ...  |  ...."; Detalle = "Sube 1, 2 o 3 niveles de directorio en el árbol del sistema de archivos"; Ejemplos = @("..", "...", "....") }
