@@ -87,7 +87,8 @@ function gco {
         git checkout @args
     }
 }
-function ga    { git add . $args }
+function ga   { git add . $args }
+function glog { git log --oneline --graph --decorate -n 10 @args }
 function gme {
     $me = (git config user.name)
     if (-not $me) { $me = $env:USERNAME }

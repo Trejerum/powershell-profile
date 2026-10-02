@@ -1,4 +1,4 @@
-﻿name: CI & Perfil Validation
+name: CI & Perfil Validation
 
 on:
   push:
@@ -62,7 +62,7 @@ jobs:
           . .\Microsoft.PowerShell_profile.ps1
           Write-Host "✓ Perfil cargado con éxito sin excepciones." -ForegroundColor Green
 
-          $testCommands = @('repos', 'phelp', 'scratch', 'sql-ping', 'profile-bench')
+          $testCommands = @('repos', 'phelp', 'scratch', 'sql-ping', 'profile-bench', 'glog', 'gundo', 'gwip', 'gunwip', 'gclean')
           foreach ($c in $testCommands) {
               if (Get-Command $c -ErrorAction SilentlyContinue) {
                   Write-Host "  ✓ Comando registrado: $c" -ForegroundColor Green
