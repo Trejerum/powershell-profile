@@ -11,7 +11,8 @@ El perfil detecta automáticamente las herramientas instaladas y activa sus acel
 | Herramienta | Utilidad en el Perfil |
 | :--- | :--- |
 | **`posh-git`** | Estado del repo en el prompt (`[rama +A ~M -D !U]`) y autocompletado nativo con `<Tab>`. |
-| **`PSReadLine`** | Historial predictivo contextual (<kbd>↑</kbd>/<kbd>↓</kbd>) y edición visual con Neovim. |
+| **`PSReadLine 2.2+`** | Autocompletado predictivo inteligente (ghost-text desde historial), menú <kbd>F2</kbd> y edición visual con Neovim. |
+| **`fzf`** *(Fuzzy Finder)* | Búsqueda difusa interactiva de archivos (`fe`/`vf`), carpetas (`fcd`), historial (`fhist`), ramas (`fco`) y repos (`repos -i`). |
 | **`Neovim` (`nvim`)** | Editor principal de Git, visor de diffs, visor de tuberías (`v`), quickfix de Ripgrep (`vrg`) y scratchpad SQL (`vsql`). |
 | **`Ripgrep` (`rg`)** | Búsqueda ultrarrápida de archivos (`ff`) y de texto con Quickfix (`vrg`). |
 | **`Lazygit` (`lg`)** | Interfaz TUI completa para Git directamente desde la terminal. |
@@ -49,13 +50,13 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
 
 | Archivo | Área | Descripción |
 | :--- | :--- | :--- |
-| **`00-env.ps1`** | **Entorno & Consola** | Codificación `UTF-8` en entrada, salida y consola. Asigna Neovim como editor global (`$env:EDITOR = 'nvim'`) y configura navegación contextual en el historial (<kbd>↑</kbd>/<kbd>↓</kbd>) y edición visual (<kbd>Ctrl+X, Ctrl+E</kbd>). |
-| **`10-navigation.ps1`** | **Navegación Ágil** | Subida de niveles (`..`, `...`, `....`), creación y entrada (`mkcd`), explorador (`open`/`o`), recarga (`reload`/`rel`) y edición de perfil (`ep`, `en`, `ep local`). |
+| **`00-env.ps1`** | **Entorno & Consola** | Codificación `UTF-8` global. Neovim como editor predeterminado (`$env:EDITOR`). Integración con `PSReadLine 2.2+`: autocompletado predictivo (ghost-text), atajos de palabras (<kbd>Ctrl+Backspace</kbd>), conmutación <kbd>F2</kbd>, búsqueda contextual (<kbd>↑</kbd>/<kbd>↓</kbd>) y edición visual (<kbd>Ctrl+X, Ctrl+E</kbd>). |
+| **`10-navigation.ps1`** | **Navegación Ágil** | Subida de niveles (`..`, `...`, `....`), creación y entrada (`mkcd`), sandboxes desechables (`scratch`/`sandbox`), explorador (`open`/`o`), recarga (`reload`/`rel`) y edición de perfil (`ep`, `en`, `ep local`). |
 | **`15-notes.ps1`** | **Notas & Diario** | Gestión de notas diarias en Neovim (`note`/`today`), captura rápida desde consola, buscador histórico (`snote`/`vnote`), dashboard (`lnotes`), scratchpad SQL (`note-sql`) y versionado Git (`notes-sync`). |
-| **`20-git.ps1`** | **Git & Lazygit** | Hub universal de proyectos (`repos`, `proj`), alias universal `g`, integración con `posh-git`, TUI (`lg`), commits rápidos (`gcom`), checkout/switch (`gco`, `gcob`), ramas ordenadas (`gb`), deshacer (`gundo`), diff split (`vd`), visor de modificados (`vmod`), stash (`gss`, `gsl`, `gsp`) y auditorías con Antigravity (`agy-review-pr`). |
-| **`30-sql.ps1`** | **SQL Server Toolkit** | Motor ADO.NET (`q`), sesión persistente (`qconnect`, `qdisc`, `use`), exploración (`dbs`, `tables`, `views`, `top`, `desc`, `count`), búsqueda (`find-table`, `find-col`, `find-code`), monitor (`who`, `see`, `see-idx`), exportación (`q2excel`, `qclip`, `qfmt`), scratchpad (`vsql`) y autocompletado en consola (<kbd>Ctrl</kbd>+<kbd>Espacio</kbd>). |
-| **`40-utils.ps1`** | **Utilidades Generales** | Archivos (`touch`, `ff`, `head`, `tail`, `extract`), diagnóstico (`ports`, `kill-port`/`kp`, `psfind`, `myip`, `sysinfo`), portapapeles (`cb`), integración Neovim (`v`, `vrg`) y buscador de comandos de consola (`hist`). |
-| **`50-help.ps1`** | **Centro de Ayuda** | Guía de comandos agrupada por áreas (`phelp`, `phelp git`, `phelp sql`) y fichas técnicas detalladas con ejemplos (`phelp <comando>`). |
+| **`20-git.ps1`** | **Git & Lazygit** | Hub universal de proyectos (`repos`, `proj`) con modo interactivo `fzf` (`-i`), checkout difuso (`fco`/`fbr`), commits temporales (`gwip`/`gunwip`), poda de ramas muertas (`gclean`), alias `g`, TUI (`lg`), commits rápidos (`gcom`), checkout/switch (`gco`, `gcob`), ramas ordenadas (`gb`), deshacer (`gundo`), diff split (`vd`), visor de modificados (`vmod`), stash (`gss`, `gsl`, `gsp`) y auditorías con Antigravity (`agy-review-pr`). |
+| **`30-sql.ps1`** | **SQL Server Toolkit** | Motor ADO.NET (`q`), diagnóstico de conectividad multi-perfil (`sql-ping`/`qping`), sesión persistente (`qconnect`, `qdisc`, `use`), exploración (`dbs`, `tables`, `views`, `top`, `desc`, `count`), búsqueda (`find-table`, `find-col`, `find-code`), monitor (`who`, `see`, `see-idx`), exportación (`q2excel`, `qclip`, `qfmt`), scratchpad (`vsql`) y autocompletado en consola (<kbd>Ctrl</kbd>+<kbd>Espacio</kbd>). |
+| **`40-utils.ps1`** | **Utilidades Generales** | Búsqueda difusa interactiva con `fzf` (`fe`/`vf`, `fcd`, `fhist`), benchmark del perfil (`profile-bench`/`pbench`), archivos (`touch`, `ff`, `head`, `tail`, `extract`), diagnóstico (`ports`, `kill-port`/`kp`, `psfind`, `myip`, `sysinfo`), portapapeles (`cb`), integración Neovim (`v`, `vrg`) y buscador de comandos (`hist`). |
+| **`50-help.ps1`** | **Centro de Ayuda** | Guía de comandos agrupada por áreas (`phelp`, `phelp git`, `phelp sql`, `phelp fzf`) y fichas técnicas detalladas con ejemplos (`phelp <comando>`). |
 | **`99-prompt.ps1`** | **Prompt Personalizado** | Muestra la ruta activa, el estado en vivo de Git vía `posh-git` y el badge de conexión persistente a SQL Server (`[BD ⚡]`). |
 
 ---
@@ -64,6 +65,13 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
 
 - **`..` / `...` / `....`**: Sube 1, 2 o 3 niveles en el árbol de directorios sin teclear `cd ..\..`.
 - **`mkcd <carpeta>`**: Crea un directorio (incluyendo carpetas intermedias si faltan) y entra en él inmediatamente.
+- **`scratch [nombre] [-List] [-Clean n] [-v]` (alias `sandbox`)**: Gestor de entornos desechables fechados en `$HOME\Documentos\Scratch\yyyy-MM-dd` para pruebas rápidas y clonado provisional:
+  - `scratch`: Crea y navega a la carpeta de hoy.
+  - `scratch test-api`: Crea un subentorno `test-api` dentro de la carpeta de hoy.
+  - `scratch -List` (o `-l`): Lista los sandboxes existentes, fechas de modificación y espacio ocupado en disco.
+  - `scratch -Clean 7`: Elimina automáticamente todos los entornos temporales con más de 7 días.
+  - `scratch -Nvim` (o `-v`): Entra y abre Neovim inmediatamente.
+- **`profile-bench` (alias `pbench`, `profile-time`)**: Diagnóstico de rendimiento del perfil. Mide milisegundo a milisegundo el tiempo de carga de cada módulo (`profile.d/*.ps1`) y el arranque completo en frío de PowerShell.
 - **`open [ruta]` (alias `o`)**: Abre el Explorador de Windows en la carpeta actual o en la ruta especificada.
 - **`proj [nombre]` (alias de `repos`)**: Salto dinámico a cualquier subproyecto dentro de `Documentos\Proyectos` con autocompletado <kbd>Tab</kbd>. Si se ejecuta sin parámetros, muestra el dashboard de proyectos.
 - **`reload` (alias `rel`, `rprof`, `reload-profile`)**: Recarga el perfil en la consola actual con confirmación visual.
@@ -115,6 +123,10 @@ El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura r�
 - **`tail <archivo> [-n 10]`**: Muestra las últimas N líneas de un archivo o fichero de log.
 - **`extract <archivo> [destino]`**: Descompresor universal para `.zip`, `.tar.gz`, `.7z` o `.rar` utilizando `7z`, `tar` o `Expand-Archive`.
 - **`cb [texto] | <comando> | cb`**: Copia texto o cualquier objeto de la consola directamente al portapapeles de Windows.
+- **Búsqueda difusa interactiva con `fzf`:**
+  - **`fe [ruta]` (alias `vf`)**: Búsqueda difusa interactiva de archivos con vista previa; pulsa <kbd>Enter</kbd> para abrirlo en Neovim.
+  - **`fcd [ruta]`**: Búsqueda difusa interactiva de carpetas y navegación (`cd`) automática sin escribir rutas.
+  - **`fhist`**: Búsqueda difusa interactiva en el historial de comandos de PowerShell; pulsa <kbd>Enter</kbd> para ejecutar el comando seleccionado.
 
 ---
 
@@ -127,6 +139,11 @@ El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura r�
   - **Salto por nombre con autocompletado <kbd>Tab</kbd>:** `repos <nombre>` (búsqueda inteligente con autocompletado nativo).
   - **Apertura directa:** `repos 1 -Nvim` (o `-v`), `repos 1 -Open` (o `-o`), `repos 1 -Code`.
   - **Refresco remoto:** `repos -f` (hace `git fetch` silencioso en los repositorios antes de evaluar para reflejar el estado de origin al instante).
+  - **Selector interactivo con `fzf`:** `repos -i` (filtra y salta a cualquier proyecto con búsqueda difusa en vivo).
+- **`fco` (alias `fbr`)**: Selector difuso interactivo de ramas locales y remotas con `fzf` para cambiar de rama al vuelo sin teclear su nombre. Si ejecutas `gco` sin argumentos, se activa automáticamente si `fzf` está presente.
+- **`gwip [mensaje]`**: Guarda todo el trabajo en curso en un commit temporal rápido (`WIP: ... [skip ci]`) permitiendo cambiar de rama de inmediato sin perder nada.
+- **`gunwip`**: Restaura el commit temporal creado previamente con `gwip`, devolviendo todos los archivos a cambios sin confirmar en el árbol de trabajo.
+- **`gclean [-Force]`**: Sincroniza y poda referencias remotas (`git fetch -p`) y elimina de forma segura ramas locales cuyo upstream en el servidor remoto ya no existe (protege `main`/`master`/`develop`).
 - **`gcom "<mensaje>"`**: Prepara todos los cambios (`git add -A`) y crea el commit en un solo paso rápido.
 - **`gcob <nueva-rama>` (alias `gswc`)**: Crea una nueva rama y cambia a ella de inmediato (`git checkout -b` / `git switch -c`).
 - **`gb`**: Lista las ramas locales ordenadas por fecha de último commit con indicador de tiempo relativo.
@@ -142,7 +159,7 @@ El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura r�
   - `gp` / `gf`: `git pull` / `git fetch`.
   - `gpush`: `git push`.
   - `gpsup` (alias `gpu`): `git push --set-upstream origin <rama_actual>`.
-  - `gco <rama>`: `git checkout <rama>` con autocompletado inteligente de ramas.
+  - `gco <rama>`: `git checkout <rama>` con autocompletado inteligente de ramas (o selector difuso `fco` si se pulsa sin argumentos).
   - `glog`: Historial compacto gráfico de los últimos 10 commits.
   - `gss [msg]` / `gsl` / `gsp [idx]`: Guardar, listar y aplicar stashes con timestamps y rama activa.
   - `agy-review-pr <rama> [base]`: Auditoría de Pull Requests con Antigravity sin saltar de rama.
@@ -197,6 +214,7 @@ Si `sql-connections.json` no existe en una máquina nueva, el perfil lo copia au
 
 ### Conexión, Entornos y Contexto
 - **`qenv [perfil]` (alias `qprofiles`, `qconns`)**: Muestra la tabla de entornos configurados, servidor, base de datos, tipo de autenticación y cuál está activo/predeterminado. Al pasar un nombre (`qenv pre`), activa ese perfil de inmediato para todos los comandos del toolkit.
+- **`sql-ping [perfil]` (alias `qping`)**: Diagnóstico de conectividad y latencia multi-perfil. Comprueba en paralelo o por servidor si cada base de datos está accesible, mide el tiempo de respuesta en milisegundos y muestra la versión exacta del motor SQL Server.
 - **`qconnect [perfil|servidor] [bd]`**: Abre una conexión persistente reutilizable de alto rendimiento (soporta nombres de perfil de `sql-connections.json` o servidor/BD arbitrarios). Muestra el badge `[perfil:BD ⚡]` en el prompt interactivo.
 - **`qdisc` (alias `qdisconnect`)**: Cierra la sesión persistente activa y vuelve al modo transitorio (sigue usando el perfil activo por defecto).
 - **`use <BaseDatos>`**: Cambia la base de datos activa al vuelo con autocompletado y refresca la caché de tablas y vistas.
@@ -235,7 +253,13 @@ Si `sql-connections.json` no existe en una máquina nueva, el perfil lo copia au
 ---
 
 ## ⚡ 6. Integración con Neovim & Consola Interactiva
-
+- **Autocompletado Predictivo Inteligente (`PSReadLine 2.2+`):**
+  - Muestra sugerencias en texto fantasma (ghost-text) gris a partir de tu historial de comandos reales mientras escribes.
+  - Acepta la sugerencia completa con <kbd>→</kbd> (flecha derecha) o con <kbd>Tab</kbd>.
+  - Pulsa <kbd>F2</kbd> para conmutar al vuelo entre sugerencia en línea (*InlineView*) o menú de lista desplegable (*ListView*).
+- **Atajos de edición acelerada:**
+  - <kbd>Ctrl + Backspace</kbd>: Borra la palabra completa anterior rápidamente sin pararse en barras o símbolos molestos.
+  - <kbd>Ctrl + Delete</kbd>: Borra la palabra completa siguiente.
 - **`v [archivo]` o `<comando> | v`**: Wrapper inteligente. Abre archivos o captura la salida por tubería (`gs | v`, `q "SELECT..." | v`) en un buffer temporal de Neovim.
 - **`vrg <patrón> [ruta]`**: Ejecuta Ripgrep y abre automáticamente Neovim cargando los resultados en la lista **Quickfix** (`:copen`), saltando al primer resultado.
 - **<kbd>Ctrl+X, Ctrl+E</kbd>**: Edita la línea de comandos actual dentro de una ventana completa de Neovim y la devuelve al prompt lista para ejecutar.
