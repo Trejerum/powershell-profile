@@ -1,0 +1,8 @@
+# Conexiones locales a bases de datos (credenciales, servidores internos)
+sql-connections.json
+
+# Archivos temporales de Neovim y Windows
+*.tmp
+*.swp
+*.swo
+*~

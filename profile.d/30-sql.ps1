@@ -2,18 +2,237 @@
  # 5. SQL SERVER TOOLKIT (ADO.NET + PowerShell)
  # ==============================================================================
 
-# Variables de entorno y defaults de conexión
-$global:SqlDefaultServer   = 'PORT1220\SQL_SERVER'
-$global:SqlDefaultDatabase = 'SGA'
+# Variables globales de conexión y sesión
 $global:SqlSession         = $null
 $global:SqlTableCache      = @()
+$global:SqlConfig          = $null
+$global:SqlConnections     = $null
+$global:SqlActiveProfile   = 'local'
+$global:SqlDefaultServer   = 'localhost'
+$global:SqlDefaultDatabase = 'master'
 
-# Configuración por si alguna vez usas Invoke-Sqlcmd directamente
-$PSDefaultParameterValues['Invoke-Sqlcmd:ServerInstance']         = $global:SqlDefaultServer
-$PSDefaultParameterValues['Invoke-Sqlcmd:Database']               = $global:SqlDefaultDatabase
-$PSDefaultParameterValues['Invoke-Sqlcmd:TrustServerCertificate'] = $true
-$PSDefaultParameterValues['Invoke-Sqlcmd:QueryTimeout']           = 120
-$PSDefaultParameterValues['Invoke-Sqlcmd:ConnectionTimeout']      = 30
+function Get-SqlProfileDirectory {
+    if ($global:ProfileDir -and (Test-Path -LiteralPath $global:ProfileDir)) {
+        return $global:ProfileDir
+    }
+    if ($PROFILE -and [string]::IsNullOrWhiteSpace($PROFILE) -eq $false) {
+        $parent = Split-Path -Parent $PROFILE -ErrorAction SilentlyContinue
+        if ($parent -and (Test-Path -LiteralPath $parent)) { return $parent }
+    }
+    if ($PSScriptRoot) {
+        $parent = if ((Split-Path -Leaf $PSScriptRoot) -ieq "profile.d") { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
+        if ($parent -and (Test-Path -LiteralPath $parent)) { return $parent }
+    }
+    $myDocs = [Environment]::GetFolderPath('MyDocuments')
+    $defaultDir = Join-Path $myDocs "WindowsPowerShell"
+    if (Test-Path -LiteralPath $defaultDir) { return $defaultDir }
+    return (Get-Location).Path
+}
+
+function Load-SqlConnectionsConfig {
+    <#
+    .SYNOPSIS
+        Carga los perfiles de conexión desde sql-connections.json (o genera plantilla si no existe).
+    #>
+    $profDir = Get-SqlProfileDirectory
+    $configFile = Join-Path $profDir "sql-connections.json"
+    $exampleFile = Join-Path $profDir "sql-connections.example.json"
+
+    if (Test-Path -LiteralPath $configFile) {
+        try {
+            $jsonContent = [System.IO.File]::ReadAllText($configFile, [System.Text.Encoding]::UTF8)
+            $cfg = $jsonContent | ConvertFrom-Json
+            $global:SqlConfig = $cfg
+            $global:SqlConnections = $cfg.connections
+
+            $defaultName = if ($cfg.default) { $cfg.default } else { "local" }
+            Set-SqlProfile -Name $defaultName -Quiet
+            return
+        }
+        catch {
+            Write-Warning "Error leyendo sql-connections.json: $_. Usando valores de fallback."
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $configFile) -and (Test-Path -LiteralPath $exampleFile)) {
+        try {
+            Copy-Item -LiteralPath $exampleFile -Destination $configFile -ErrorAction SilentlyContinue
+            Write-Host "● Creado sql-connections.json a partir de la plantilla de ejemplo." -ForegroundColor Cyan
+            Load-SqlConnectionsConfig
+            return
+        } catch { }
+    }
+
+    $global:SqlActiveProfile   = "local"
+    $global:SqlDefaultServer   = "localhost"
+    $global:SqlDefaultDatabase = "master"
+    $global:SqlConnections = [PSCustomObject]@{
+        "local" = [PSCustomObject]@{
+            server = "localhost"
+            database = "master"
+            integratedSecurity = $true
+            description = "Conexión local por defecto"
+        }
+    }
+}
+
+function Get-SqlConnectionString {
+    <#
+    .SYNOPSIS
+        Genera la cadena de conexión ADO.NET para SQL Server según el perfil o parámetros dados.
+    #>
+    param(
+        [string]$Server = $global:SqlDefaultServer,
+        [string]$Database = $global:SqlDefaultDatabase,
+        [int]$Timeout = 10,
+        [string]$ProfileName
+    )
+
+    $targetProfile = if ($ProfileName) { $ProfileName } else { $global:SqlActiveProfile }
+    $pData = $null
+    if ($global:SqlConnections -and $targetProfile) {
+        $prop = $global:SqlConnections.PSObject.Properties[$targetProfile]
+        if ($prop) { $pData = $prop.Value }
+    }
+
+    $srv = if ($Server) { $Server } elseif ($pData -and $pData.server) { $pData.server } else { "localhost" }
+    $db  = if ($Database) { $Database } elseif ($pData -and $pData.database) { $pData.database } else { "master" }
+
+    $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+    $builder['Data Source'] = $srv
+    $builder['Initial Catalog'] = $db
+    $builder['Connect Timeout'] = $Timeout
+    $builder['TrustServerCertificate'] = $true
+
+    if ($pData -and $pData.integratedSecurity -eq $false -and $pData.user) {
+        $builder['Integrated Security'] = $false
+        $builder['User ID'] = $pData.user
+        if ($pData.password) {
+            $builder['Password'] = $pData.password
+        }
+    } else {
+        $builder['Integrated Security'] = $true
+    }
+
+    return $builder.ConnectionString
+}
+
+function Set-SqlProfile {
+    <#
+    .SYNOPSIS
+        Cambia el perfil de conexión SQL Server activo para todos los comandos del toolkit.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Name,
+
+        [Parameter()]
+        [switch]$Quiet
+    )
+
+    if ($null -eq $global:SqlConnections) {
+        Load-SqlConnectionsConfig
+    }
+
+    $prop = $global:SqlConnections.PSObject.Properties[$Name]
+    if (-not $prop) {
+        $match = $global:SqlConnections.PSObject.Properties | Where-Object { $_.Name -ieq $Name } | Select-Object -First 1
+        if ($match) {
+            $prop = $match
+            $Name = $match.Name
+        }
+    }
+
+    if (-not $prop) {
+        Write-Error "El perfil SQL '$Name' no existe en sql-connections.json. Usa 'qenv' para ver los perfiles disponibles."
+        return
+    }
+
+    $profileData = $prop.Value
+    $global:SqlActiveProfile   = $Name
+    $global:SqlDefaultServer   = $profileData.server
+    $global:SqlDefaultDatabase = $profileData.database
+
+    if ($global:SqlSession -and $global:SqlSession.State -eq 'Open') {
+        qconnect -Server $global:SqlDefaultServer -Database $global:SqlDefaultDatabase -Quiet
+    }
+
+    $PSDefaultParameterValues['Invoke-Sqlcmd:ServerInstance'] = $global:SqlDefaultServer
+    $PSDefaultParameterValues['Invoke-Sqlcmd:Database']       = $global:SqlDefaultDatabase
+
+    $global:SqlTableCache = @()
+
+    if (-not $Quiet) {
+        Write-Host "● Perfil SQL cambiado a " -NoNewline -ForegroundColor Green
+        Write-Host "[$Name] " -ForegroundColor Yellow -NoNewline
+        Write-Host "($global:SqlDefaultServer / $global:SqlDefaultDatabase)" -ForegroundColor White
+    }
+}
+
+function qenv {
+    <#
+    .SYNOPSIS
+        Muestra o cambia el entorno de conexión SQL Server configurado en sql-connections.json.
+    .EXAMPLE
+        qenv
+        qenv pre
+        qenv local
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Profile
+    )
+
+    if ($Profile) {
+        Set-SqlProfile -Name $Profile
+        return
+    }
+
+    if ($null -eq $global:SqlConnections) {
+        Load-SqlConnectionsConfig
+    }
+
+    $profDir = Get-SqlProfileDirectory
+    $configFile = Join-Path $profDir "sql-connections.json"
+
+    Write-Host "`n=== Entornos SQL Server ($configFile) ===`n" -ForegroundColor DarkCyan
+
+    $defaultName = if ($global:SqlConfig -and $global:SqlConfig.default) { $global:SqlConfig.default } else { "local" }
+
+    $rows = @()
+    foreach ($p in $global:SqlConnections.PSObject.Properties) {
+        $pName = $p.Name
+        $val   = $p.Value
+        $isDefault = ($pName -ieq $defaultName)
+        $isActive  = ($pName -ieq $global:SqlActiveProfile)
+
+        $statusMark = if ($isActive -and $isDefault) { "* (Activo)" }
+                      elseif ($isActive) { "(Activo)" }
+                      elseif ($isDefault) { "*" }
+                      else { "" }
+
+        $auth = if ($val.integratedSecurity -eq $false) { "SQL ($($val.user))" } else { "Windows Auth" }
+
+        $rows += [PSCustomObject]@{
+            Perfil     = $pName
+            Servidor   = $val.server
+            BaseDatos  = $val.database
+            Default    = $statusMark
+            Autentic   = $auth
+            Descrip    = $val.description
+        }
+    }
+
+    $rows | Format-Table Perfil, Servidor, BaseDatos, Default, Autentic, Descrip -AutoSize
+
+    Write-Host "Tip: Usa 'qenv <perfil>' o 'qconnect <perfil>' (ej. 'qenv pre') para activar un entorno.`n" -ForegroundColor DarkGray
+}
+Set-Alias qprofiles qenv
+Set-Alias qconns qenv
+
+Load-SqlConnectionsConfig
 
 function Update-SqlTableCache {
     <#
@@ -30,7 +249,7 @@ function Update-SqlTableCache {
         $conn = $global:SqlSession
     }
     else {
-        $cs = "Server=$global:SqlDefaultServer;Database=$global:SqlDefaultDatabase;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=5;"
+        $cs = Get-SqlConnectionString -Server $global:SqlDefaultServer -Database $global:SqlDefaultDatabase -Timeout 5
         $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
         try {
             $conn.Open()
@@ -121,20 +340,39 @@ Set-Alias -Name qdisc -Value qdisconnect
 function qconnect {
     <#
     .SYNOPSIS
-        Abre una conexión persistente ultra rápida con SQL Server.
+        Abre una conexión persistente ultra rápida con SQL Server (soporta nombre de perfil o servidor/bd).
+    .EXAMPLE
+        qconnect
+        qconnect pre
+        qconnect local
+        qconnect 'SRV\INST' 'SGA'
     #>
     [CmdletBinding()]
     param(
         [Parameter(Position = 0)]
-        [string]$Server = $global:SqlDefaultServer,
+        [string]$Server,
 
         [Parameter(Position = 1)]
-        [string]$Database = $global:SqlDefaultDatabase
+        [string]$Database,
+
+        [switch]$Quiet
     )
+
+    if ($Server -and -not $Database -and $global:SqlConnections) {
+        $match = $global:SqlConnections.PSObject.Properties | Where-Object { $_.Name -ieq $Server } | Select-Object -First 1
+        if ($match) {
+            Set-SqlProfile -Name $match.Name -Quiet
+            $Server   = $global:SqlDefaultServer
+            $Database = $global:SqlDefaultDatabase
+        }
+    }
+
+    if (-not $Server)   { $Server   = $global:SqlDefaultServer }
+    if (-not $Database) { $Database = $global:SqlDefaultDatabase }
 
     qdisconnect -Quiet
 
-    $cs = "Server=$Server;Database=$Database;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=10;"
+    $cs = Get-SqlConnectionString -Server $Server -Database $Database -Timeout 10
     try {
         $global:SqlSession = New-Object System.Data.SqlClient.SqlConnection($cs)
         $global:SqlSession.Open()
@@ -145,7 +383,12 @@ function qconnect {
         $initCmd.CommandTimeout = 5
         [void]$initCmd.ExecuteNonQuery()
 
-        Write-Host "[OK] Conectado a [$Database] en [$Server]" -ForegroundColor Green
+        if (-not $Quiet) {
+            Write-Host "[OK] Conectado a [$Database] en [$Server]" -ForegroundColor Green
+            if ($global:SqlActiveProfile) {
+                Write-Host "     Perfil activo: [$global:SqlActiveProfile]" -ForegroundColor DarkGray
+            }
+        }
         Update-SqlTableCache
     }
     catch {
@@ -168,12 +411,17 @@ function use {
 
     $cleanDb = ($Database.Trim().Trim('"', "'").Trim('[]') -replace '[\0\r\n\t]', '').Replace(']', ']]')
 
+    $newDb = $cleanDb.Replace(']]', ']')
     if ($global:SqlSession -and $global:SqlSession.State -eq 'Open') {
         try {
             $cmd = $global:SqlSession.CreateCommand()
             $cmd.CommandText = "USE [$cleanDb]"
             [void]$cmd.ExecuteNonQuery()
-            $global:SqlDefaultDatabase = $cleanDb.Replace(']]', ']')
+            $global:SqlDefaultDatabase = $newDb
+            if ($global:SqlConnections -and $global:SqlActiveProfile) {
+                $prop = $global:SqlConnections.PSObject.Properties[$global:SqlActiveProfile]
+                if ($prop) { $prop.Value.database = $newDb }
+            }
             Update-SqlTableCache
             Write-Host "● Contexto cambiado a [$($global:SqlDefaultDatabase)]" -ForegroundColor Green
         }
@@ -182,7 +430,11 @@ function use {
         }
     }
     else {
-        $global:SqlDefaultDatabase = $cleanDb.Replace(']]', ']')
+        $global:SqlDefaultDatabase = $newDb
+        if ($global:SqlConnections -and $global:SqlActiveProfile) {
+            $prop = $global:SqlConnections.PSObject.Properties[$global:SqlActiveProfile]
+            if ($prop) { $prop.Value.database = $newDb }
+        }
         Write-Host "● Contexto cambiado a [$($global:SqlDefaultDatabase)]" -ForegroundColor Green
     }
 }
@@ -198,7 +450,7 @@ Register-ArgumentCompleter -CommandName use -ParameterName Database -ScriptBlock
             $conn = $global:SqlSession
         }
         else {
-            $cs = "Server=$global:SqlDefaultServer;Database=master;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=3;"
+            $cs = Get-SqlConnectionString -Server $global:SqlDefaultServer -Database "master" -Timeout 3
             $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
             $conn.Open()
             $needClose = $true
@@ -372,7 +624,7 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
         }
         else {
             $isTransient = $true
-            $cs = "Server=$global:SqlDefaultServer;Database=$global:SqlDefaultDatabase;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=10;"
+            $cs = Get-SqlConnectionString -Server $global:SqlDefaultServer -Database $global:SqlDefaultDatabase -Timeout 10
             try {
                 $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
                 $conn.Open()
@@ -383,7 +635,7 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                 [void]$initCmd.ExecuteNonQuery()
             }
             catch {
-                Write-Error "No se pudo conectar a SQL Server ($global:SqlDefaultServer): $($_.Exception.Message)"
+                Write-Error "No se pudo conectar a SQL Server ($global:SqlDefaultServer / $global:SqlDefaultDatabase): $($_.Exception.Message)"
                 return
             }
         }
@@ -466,7 +718,7 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                     if ($isNetError -and $isPersistent -and $attempt -lt $maxAttempts) {
                         qdisconnect -Quiet
                         try {
-                            $cs = "Server=$savedServer;Database=$savedDb;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=10;"
+                            $cs = Get-SqlConnectionString -Server $savedServer -Database $savedDb -Timeout 10
                             $global:SqlSession = New-Object System.Data.SqlClient.SqlConnection($cs)
                             $global:SqlSession.Open()
 
@@ -1377,7 +1629,8 @@ function vsql {
     param()
 
     $tempSql = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "scratch_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).sql")
-    $header = "-- Scratchpad SQL en [$global:SqlDefaultDatabase]@[$global:SqlDefaultServer]`r`n-- Escribe tu consulta y guarda con :wq`r`n`r`n"
+    $profTag = if ($global:SqlActiveProfile) { " ($global:SqlActiveProfile)" } else { "" }
+    $header = "-- Scratchpad SQL en [$global:SqlDefaultDatabase]@[$global:SqlDefaultServer]$profTag`r`n-- Escribe tu consulta y guarda con :wq`r`n`r`n"
     [System.IO.File]::WriteAllText($tempSql, $header, [System.Text.UTF8Encoding]::new($true))
 
     try {

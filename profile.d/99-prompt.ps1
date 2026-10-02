@@ -17,7 +17,8 @@ function prompt {
     # Indicador de estado de conexión persistente a SQL Server
     if ($global:SqlSession -and $global:SqlSession.State -eq 'Open') {
         $db = $global:SqlSession.Database
-        Write-Host " [$db ⚡]" -ForegroundColor Green -NoNewline
+        $profileTag = if ($global:SqlActiveProfile) { "$($global:SqlActiveProfile):$db" } else { $db }
+        Write-Host " [$profileTag ⚡]" -ForegroundColor Green -NoNewline
     }
 
     return "> "

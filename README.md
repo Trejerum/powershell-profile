@@ -137,12 +137,45 @@ El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura r�
 
 ## 🗄️ 5. SQL Server Toolkit (ADO.NET)
 
-Motor de alto rendimiento conectado por defecto a la instancia local `PORT1220\SQL_SERVER`:
+Motor de alto rendimiento desacoplado de credenciales y entornos locales mediante un archivo de configuración JSON local y git-ignorado.
 
-### Conexión y Contexto
-- **`qconnect [servidor] [bd]`**: Abre una conexión persistente reutilizable de alto rendimiento (muestra `[BD ⚡]` en el prompt).
-- **`qdisc` (alias `qdisconnect`)**: Cierra la sesión persistente activa y vuelve al modo transitorio.
-- **`use <BaseDatos>`**: Cambia la base de datos activa al vuelo con autocompletado y refresca la caché de autocompletado.
+### Configuración Multientorno (`sql-connections.json`)
+El perfil lee dinámicamente sus conexiones desde `sql-connections.json` en la raíz del perfil (ignorado por Git para máxima seguridad):
+- **Plantilla versionada:** [`sql-connections.example.json`](file:///C:/Users/diego.corral/OneDrive%20-%20PKF%20ATTEST/Documentos/WindowsPowerShell/sql-connections.example.json) sirve como modelo para configurar entornos locales, desarrollo, preproducción o remotos con autenticación integrada o SQL Auth:
+```json
+{
+  "default": "local",
+  "connections": {
+    "local": {
+      "server": "PORT1220\\SQL_SERVER",
+      "database": "SGA",
+      "integratedSecurity": true,
+      "description": "Instancia local de desarrollo SGA"
+    },
+    "pre": {
+      "server": "SRV-PRE\\SQL_PRE",
+      "database": "RSGA_PRE",
+      "integratedSecurity": true,
+      "description": "Entorno de preproducción"
+    },
+    "remote_sql": {
+      "server": "10.0.0.50,1433",
+      "database": "ERP_QA",
+      "integratedSecurity": false,
+      "user": "sa",
+      "password": "Password123!",
+      "description": "Servidor remoto con SQL Authentication"
+    }
+  }
+}
+```
+Si `sql-connections.json` no existe en una máquina nueva, el perfil lo copia automáticamente desde la plantilla de ejemplo.
+
+### Conexión, Entornos y Contexto
+- **`qenv [perfil]` (alias `qprofiles`, `qconns`)**: Muestra la tabla de entornos configurados, servidor, base de datos, tipo de autenticación y cuál está activo/predeterminado. Al pasar un nombre (`qenv pre`), activa ese perfil de inmediato para todos los comandos del toolkit.
+- **`qconnect [perfil|servidor] [bd]`**: Abre una conexión persistente reutilizable de alto rendimiento (soporta nombres de perfil de `sql-connections.json` o servidor/BD arbitrarios). Muestra el badge `[perfil:BD ⚡]` en el prompt interactivo.
+- **`qdisc` (alias `qdisconnect`)**: Cierra la sesión persistente activa y vuelve al modo transitorio (sigue usando el perfil activo por defecto).
+- **`use <BaseDatos>`**: Cambia la base de datos activa al vuelo con autocompletado y refresca la caché de tablas y vistas.
 - **`dbs` (alias `show-dbs`)**: Lista todas las bases de datos de la instancia con su tamaño en MB, estado y modelo de recuperación.
 
 ### Exploración y Búsqueda
