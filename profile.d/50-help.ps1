@@ -91,6 +91,7 @@ function Show-ProfileHelp {
 
         # 5. SQL Server Toolkit
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qenv"; Sintaxis = "qenv [perfil]"; Detalle = "Muestra o activa los entornos/conexiones de sql-connections.json (alias: qprofiles, qconns)"; Ejemplos = @("qenv", "qenv pre", "qenv local") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "sql-ping"; Sintaxis = "sql-ping [perfil]"; Detalle = "Diagnóstico de conectividad, versión y latencia de todos los servidores de sql-connections.json (alias: qping)"; Ejemplos = @("sql-ping", "qping", "qping local") }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q"; Sintaxis = "q <query/.sql> [switches]"; Detalle = "Motor ultrarrápido ADO.NET (switches: -Grid, -Clip, -Csv, -Json, -DryRun, -Timeout N)"; Ejemplos = @("q 'SELECT TOP 10 * FROM Articulos'", "q ./cambios.sql -DryRun", "q 'SELECT * FROM Clientes' -Grid") }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qconnect"; Sintaxis = "qconnect [perfil/srv] [bd]"; Detalle = "Abre una conexión persistente reutilizable de alto rendimiento (soporta perfiles de sql-connections.json)"; Ejemplos = @("qconnect", "qconnect pre", "qconnect 'localhost' 'MiBaseDatos'") }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qdisc"; Sintaxis = "qdisc"; Detalle = "Cierra la sesión persistente activa y vuelve a conexiones transitorias (alias: qdisconnect)"; Ejemplos = @("qdisc") }

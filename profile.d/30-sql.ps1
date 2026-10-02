@@ -232,6 +232,115 @@ function qenv {
 Set-Alias qprofiles qenv
 Set-Alias qconns qenv
 
+# Comprobación de conectividad y latencia multi-perfil (sql-ping / qping)
+function sql-ping {
+    <#
+    .SYNOPSIS
+        Comprueba la conectividad, latencia y estado de todos los perfiles de SQL Server o uno específico.
+    .EXAMPLE
+        sql-ping
+        sql-ping local
+        qping
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Profile,
+
+        [int]$Timeout = 3
+    )
+
+    if ($null -eq $global:SqlConnections) {
+        Load-SqlConnectionsConfig
+    }
+
+    $profilesToTest = if ($Profile) {
+        $p = $global:SqlConnections.PSObject.Properties[$Profile]
+        if (-not $p) {
+            Write-Warning "El perfil '$Profile' no existe en sql-connections.json."
+            return
+        }
+        @($p)
+    } else {
+        @($global:SqlConnections.PSObject.Properties)
+    }
+
+    Write-Host "`n=== Diagnóstico de Conectividad SQL ($($profilesToTest.Count) perfiles, timeout ${Timeout}s) ===`n" -ForegroundColor DarkCyan
+
+    $results = @()
+    foreach ($prop in $profilesToTest) {
+        $pName = $prop.Name
+        $data  = $prop.Value
+        $srv   = if ($data.server) { $data.server } else { "localhost" }
+        $db    = if ($data.database) { $data.database } else { "master" }
+
+        $connStr = Get-SqlConnectionString -ProfileName $pName -Timeout $Timeout
+
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
+        $status = "Online"
+        $statusText = "✓ En línea"
+        $statusColor = "Green"
+        $version = ""
+        $errorMsg = ""
+
+        try {
+            $conn.Open()
+            $cmd = $conn.CreateCommand()
+            $cmd.CommandText = "SELECT SERVERPROPERTY('ProductVersion') AS Ver, SERVERPROPERTY('ProductLevel') AS Lvl"
+            $cmd.CommandTimeout = $Timeout
+            $reader = $cmd.ExecuteReader()
+            if ($reader.Read()) {
+                $version = "$($reader['Ver']) ($($reader['Lvl']))"
+            }
+            $reader.Close()
+            $conn.Close()
+        }
+        catch {
+            $status = "Offline"
+            $statusText = "✖ Inaccesible"
+            $statusColor = "Red"
+            $errorMsg = $_.Exception.Message
+            if ($errorMsg.Length -gt 45) { $errorMsg = $errorMsg.Substring(0, 42) + '...' }
+        }
+        finally {
+            $sw.Stop()
+            if ($conn -and $conn.State -eq 'Open') { $conn.Dispose() }
+        }
+
+        $latencyMs = [Math]::Round($sw.Elapsed.TotalMilliseconds, 0)
+        $latencyStr = if ($status -eq "Online") { "$latencyMs ms" } else { "Timeout" }
+
+        $results += [PSCustomObject]@{
+            Perfil    = $pName
+            Servidor  = $srv
+            BaseDatos = $db
+            Estado    = $statusText
+            Color     = $statusColor
+            Latencia  = $latencyStr
+            Detalle   = if ($version) { $version } else { $errorMsg }
+        }
+    }
+
+    foreach ($r in $results) {
+        $pCol   = "[$($r.Perfil)]".PadRight(14)
+        $srvCol = $r.Servidor.PadRight(22)
+        $dbCol  = $r.BaseDatos.PadRight(18)
+        $latCol = $r.Latencia.PadLeft(8)
+
+        Write-Host "  $pCol" -NoNewline -ForegroundColor Yellow
+        Write-Host "$srvCol" -NoNewline -ForegroundColor White
+        Write-Host "$dbCol" -NoNewline -ForegroundColor DarkGray
+        Write-Host " | " -NoNewline -ForegroundColor DarkGray
+        Write-Host "$($r.Estado)".PadRight(14) -NoNewline -ForegroundColor $r.Color
+        Write-Host " | Latencia: " -NoNewline -ForegroundColor DarkGray
+        Write-Host "$latCol" -NoNewline -ForegroundColor Cyan
+        Write-Host " | $($r.Detalle)" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+}
+Set-Alias qping sql-ping
+
 Load-SqlConnectionsConfig
 
 function Update-SqlTableCache {
