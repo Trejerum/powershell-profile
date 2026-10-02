@@ -27,6 +27,7 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
 | :--- | :--- | :--- |
 | **`00-env.ps1`** | **Entorno & Consola** | Codificación `UTF-8` en entrada, salida y consola. Asigna Neovim como editor global (`$env:EDITOR = 'nvim'`) y configura navegación contextual en el historial (<kbd>↑</kbd>/<kbd>↓</kbd>) y edición visual (<kbd>Ctrl+X, Ctrl+E</kbd>). |
 | **`10-navigation.ps1`** | **Navegación Ágil** | Subida de niveles (`..`, `...`, `....`), creación y entrada (`mkcd`), explorador (`open`/`o`), salto dinámico a proyectos (`proj`), recarga (`reload`/`rel`) y atajos a repositorios (`sga`, `rsga`, `rsga2`, `rsga3`, `ep`, `en`). |
+| **`15-notes.ps1`** | **Notas & Diario** | Gestión de notas diarias en Neovim (`note`/`today`), captura rápida desde consola, buscador histórico (`snote`/`vnote`), dashboard (`lnotes`), scratchpad SQL (`note-sql`) y versionado Git (`notes-sync`). |
 | **`20-git.ps1`** | **Git & Lazygit** | Alias universal `g`, integración con `posh-git`, dashboard en vivo (`repo-status`/`repos`), TUI (`lg`), commits rápidos (`gcom`), checkout/switch (`gco`, `gcob`), ramas ordenadas (`gb`), deshacer (`gundo`), diff split (`vd`), visor de modificados (`vmod`), stash (`gss`, `gsl`, `gsp`) y auditorías con Antigravity (`agy-review-pr`). |
 | **`30-sql.ps1`** | **SQL Server Toolkit** | Motor ADO.NET (`q`), sesión persistente (`qconnect`, `qdisc`, `use`), exploración (`dbs`, `tables`, `views`, `top`, `desc`, `count`), búsqueda (`find-table`, `find-col`, `find-code`), monitor (`who`, `see`, `see-idx`), exportación (`q2excel`, `qclip`, `qfmt`), scratchpad (`vsql`) y autocompletado en consola (<kbd>Ctrl</kbd>+<kbd>Espacio</kbd>). |
 | **`40-utils.ps1`** | **Utilidades Generales** | Archivos (`touch`, `ff`, `head`, `tail`, `extract`), diagnóstico (`ports`, `kill-port`/`kp`, `psfind`, `myip`, `sysinfo`), portapapeles (`cb`), integración Neovim (`v`, `vrg`) y buscador de comandos de consola (`hist`). |
@@ -46,9 +47,29 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
   - `sga`: Salta a `$HOME\Documentos\Proyectos\SGA`.
   - `rsga` / `rsga2` / `rsga3`: Salta a las instancias locales del repositorio RSGA.
   - `profile`: Salta a la carpeta del perfil de PowerShell.
-  - `notes`: Salta a la carpeta de notas personales.
-  - `ep [modulo]` (alias `edit-profile`): Abre `Microsoft.PowerShell_profile.ps1` o un módulo específico (ej. `ep sql`, `ep git`, `ep utils`) en Neovim.
+  - `notes [args]`: Navega a `$HOME\Documentos\Notes` (o ejecuta captura/apertura si recibe argumentos).
+  - `ep [modulo]` (alias `edit-profile`): Abre `Microsoft.PowerShell_profile.ps1` o un módulo específico (ej. `ep notes`, `ep sql`, `ep git`, `ep utils`) en Neovim.
   - `en` (alias `edit-nvim`): Abre la configuración de Neovim (`~\AppData\Local\nvim`).
+
+---
+
+## 📝 1.5. Notas Personales & Diario Developer (`$HOME\Documentos\Notes`)
+
+El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura rápida sin cambio de contexto y sincronización Git:
+
+- **`note` (alias `today`, `diario`)**:
+  - `note`: Abre la nota de hoy (`YYYYMMDD.md`) en Neovim ubicada al final del archivo. Si no existe, la crea automáticamente con la cabecera `# YYYYMMDD`.
+  - `note "texto a apuntar"`: **Captura rápida instantánea** sin abrir Neovim. Añade `- [HH:mm] <texto>` al final de la nota del día sin interrumpir tu tarea.
+  - `<comando> | note`: Soporta tubería directa (ej. `q "SELECT..." | note` o `"Error SP..." | note`).
+  - `note yesterday` (o `note -1`, `note ayer`): Abre la nota de ayer (o del viernes si hoy es lunes).
+  - `note last` (o `note ultimo`): Abre la última nota diaria existente.
+  - `note <número>` (ej. `note 1`, `note 2`): Abre la nota correspondiente según el listado de `lnotes`.
+  - `note <YYYYMMDD>` (ej. `note 20261001`): Abre la nota de una fecha concreta.
+- **`snote <patrón>` (alias `find-note`)**: Busca texto en todas las notas históricas con Ripgrep resaltando en color las coincidencias, líneas y archivos.
+- **`vnote <patrón>`**: Busca texto en las notas con Ripgrep y abre todos los resultados directamente en Neovim dentro de la lista **Quickfix** (`:copen`) para navegar entre notas con `<Enter>`.
+- **`lnotes [n] [-Open n]` (alias `recent-notes`)**: Muestra un dashboard con las últimas N notas diarias, tiempo relativo (*"Hoy"*, *"Ayer"*, *"Hace 4 días"*), tamaño y las primeras líneas tratadas. Permite abrir directamente una nota con `-Open <n>` o `note <n>`.
+- **`note-sql <nombre>` (alias `nsql`)**: Crea un script SQL fechado (`YYYYMMDD_nombre.sql`) en `Documentos\Notes\sql\` con cabecera y plantilla, abriéndolo en Neovim.
+- **`notes-sync [mensaje]` (alias `nsync`, `note-commit`, `note-save`)**: Añade todos los cambios de tus notas y crea un commit en el repositorio Git local de `Documentos\Notes`.
 
 ---
 

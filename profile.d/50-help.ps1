@@ -35,6 +35,14 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "ep"; Sintaxis = "ep [modulo]"; Detalle = "Abre `$PROFILE o un módulo específico en Neovim (ej. 'ep sql', 'ep git')"; Ejemplos = @("ep", "ep sql", "ep git") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "en"; Sintaxis = "en"; Detalle = "Abre la carpeta de configuración de Neovim (~AppData\Local\nvim) en Neovim (alias: edit-nvim)"; Ejemplos = @("en") }
 
+        # 1.5. Notas & Diario Developer
+        [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "note"; Sintaxis = "note [texto/fecha]"; Detalle = "Abre nota del día en Neovim o realiza capturas rápidas desde consola (alias: today, diario)"; Ejemplos = @("note", "note 'Revisar bug en traspasos'", "note yesterday", "note 2") }
+        [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "snote"; Sintaxis = "snote <patrón>"; Detalle = "Busca texto en todas las notas históricas con Ripgrep resaltando en color (alias: find-note)"; Ejemplos = @("snote 'inventario'", "snote 'wizard'") }
+        [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "vnote"; Sintaxis = "vnote <patrón>"; Detalle = "Busca texto en las notas con Ripgrep y abre resultados en Neovim con Quickfix (:copen)"; Ejemplos = @("vnote 'traspaso'") }
+        [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "lnotes"; Sintaxis = "lnotes [n] [-Open n]"; Detalle = "Dashboard de notas recientes con fechas relativas y primeros puntos tratados (alias: recent-notes)"; Ejemplos = @("lnotes", "lnotes 5", "lnotes -Open 2") }
+        [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "note-sql"; Sintaxis = "note-sql <nombre>"; Detalle = "Crea un script SQL fechado en Documentos\Notes\sql y lo abre en Neovim (alias: nsql)"; Ejemplos = @("note-sql fix_inventario") }
+        [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "notes-sync"; Sintaxis = "notes-sync [mensaje]"; Detalle = "Registra y sincroniza todos los cambios de notas en el repo Git local (alias: nsync, note-save)"; Ejemplos = @("notes-sync", "notes-sync 'Reunión sprint'") }
+
         # 2. Archivos & Búsqueda
         [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "v"; Sintaxis = "v [ruta] | <cmd> | v"; Detalle = "Wrapper inteligente de Neovim: abre ficheros o vuelca salidas de pipeline a buffer temporal"; Ejemplos = @("v Program.cs", "gs | v", "q 'SELECT TOP 10 * FROM Articulos' | v") }
         [PSCustomObject]@{ Categoria = "Archivos & Búsqueda"; Comando = "vrg"; Sintaxis = "vrg <patrón> [ruta]"; Detalle = "Busca texto con Ripgrep y abre resultados directamente en Neovim dentro de la lista Quickfix (:copen)"; Ejemplos = @("vrg 'Get-ActiveSql'", "vrg 'kill-port' src/") }
@@ -161,3 +169,4 @@ function Show-ProfileHelp {
 Set-Alias phelp Show-ProfileHelp
 Set-Alias '?p'  Show-ProfileHelp
  
+
