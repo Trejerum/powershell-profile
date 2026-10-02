@@ -28,6 +28,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "mkcd"; Sintaxis = "mkcd <carpeta>"; Detalle = "Crea un directorio (incluyendo padres si no existen) y navega dentro de él de inmediato"; Ejemplos = @("mkcd backend/api/v2") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "open"; Sintaxis = "open [ruta]"; Detalle = "Abre la carpeta actual o la ruta indicada en el Explorador de archivos de Windows (alias: o)"; Ejemplos = @("open", "open .", "open ./logs") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "reload"; Sintaxis = "reload"; Detalle = "Recarga el perfil de PowerShell en la consola activa (alias: rel, rprof, reload-profile)"; Ejemplos = @("reload", "rel") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "profile-bench"; Sintaxis = "profile-bench"; Detalle = "Diagnóstico y benchmark del tiempo de arranque y coste de cada módulo del perfil (alias: pbench)"; Ejemplos = @("profile-bench", "pbench") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "ep"; Sintaxis = "ep [modulo]"; Detalle = "Abre `$PROFILE o un módulo específico en Neovim (ej. 'ep sql', 'ep git')"; Ejemplos = @("ep", "ep sql", "ep git") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "en"; Sintaxis = "en"; Detalle = "Abre la carpeta de configuración de Neovim (~AppData\Local\nvim) en Neovim (alias: edit-nvim)"; Ejemplos = @("en") }
 

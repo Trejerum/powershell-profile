@@ -562,3 +562,77 @@ function fhist {
         Invoke-Expression $selected
     }
 }
+
+# ==============================================================================
+# DIAGNÓSTICO Y RENDIMIENTO DEL PERFIL (BENCHMARK)
+# ==============================================================================
+
+function profile-bench {
+    <#
+    .SYNOPSIS
+        Mide el tiempo de carga milisegundo a milisegundo de cada módulo del perfil y el arranque total.
+    .EXAMPLE
+        profile-bench
+        pbench
+    #>
+    [CmdletBinding()]
+    param()
+
+    $pDir = if ($global:ProfileDir) { $global:ProfileDir } else { Split-Path -Parent $PROFILE }
+    $pD = Join-Path $pDir "profile.d"
+
+    if (-not (Test-Path -LiteralPath $pD)) {
+        Write-Warning "No se encontró el directorio de módulos '$pD'."
+        return
+    }
+
+    Write-Host "`n=== Diagnóstico de Rendimiento del Perfil ($PROFILE) ===`n" -ForegroundColor DarkCyan
+
+    $files = Get-ChildItem -Path "$pD\*.ps1" | Sort-Object Name
+    $results = @()
+    $totalMs = 0
+
+    foreach ($f in $files) {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            $null = & { . $f.FullName } 2>$null
+        } catch { }
+        $sw.Stop()
+        $ms = [Math]::Round($sw.Elapsed.TotalMilliseconds, 1)
+        $totalMs += $ms
+
+        $statusColor = if ($ms -lt 40) { 'Green' } elseif ($ms -lt 100) { 'Yellow' } else { 'Red' }
+        $barLength = [Math]::Min([Math]::Max([int]($ms / 5), 1), 25)
+        $bar = ("█" * $barLength)
+
+        $results += [PSCustomObject]@{
+            Modulo = $f.Name
+            Ms     = $ms
+            Bar    = $bar
+            Color  = $statusColor
+        }
+    }
+
+    # Comprobación de arranque frío en subshell
+    $coldSw = [System.Diagnostics.Stopwatch]::StartNew()
+    $subProcess = Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -Command `"`$PROFILE = '$PROFILE'; . '$pDir\Microsoft.PowerShell_profile.ps1'`"" -WindowStyle Hidden -PassThru -Wait
+    $coldSw.Stop()
+    $coldMs = [Math]::Round($coldSw.Elapsed.TotalMilliseconds, 0)
+
+    foreach ($r in $results) {
+        $nameCol = $r.Modulo.PadRight(28)
+        $msCol   = ("$($r.Ms) ms").PadLeft(10)
+        Write-Host "  $nameCol" -NoNewline -ForegroundColor White
+        Write-Host " $msCol  " -NoNewline -ForegroundColor Cyan
+        Write-Host $r.Bar -ForegroundColor $r.Color
+    }
+
+    Write-Host "  --------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host "  Carga acumulada módulos:     " -NoNewline -ForegroundColor DarkGray
+    Write-Host ("$([Math]::Round($totalMs, 1)) ms").PadLeft(8) -ForegroundColor Green
+    Write-Host "  Arranque completo en frío:   " -NoNewline -ForegroundColor DarkGray
+    Write-Host ("$coldMs ms").PadLeft(8) -ForegroundColor Cyan
+    Write-Host ""
+}
+Set-Alias pbench profile-bench
+Set-Alias profile-time profile-bench
