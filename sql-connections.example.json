@@ -3,19 +3,19 @@
   "connections": {
     "local": {
       "server": "localhost\\SQLEXPRESS",
-      "database": "SGA",
+      "database": "MiBaseDatos",
       "integratedSecurity": true,
-      "description": "Base de datos local de desarrollo SGA"
+      "description": "Base de datos local de desarrollo"
     },
     "pre": {
       "server": "SRV-PRE\\SQL_SERVER",
-      "database": "SGA_PRE",
+      "database": "MiBaseDatos_PRE",
       "integratedSecurity": true,
       "description": "Entorno de preproducción"
     },
     "remote_sql_auth": {
       "server": "192.168.1.100,1433",
-      "database": "SGA_TEST",
+      "database": "MiBaseDatos_TEST",
       "integratedSecurity": false,
       "user": "sa",
       "password": "tu_password_aqui",

@@ -347,15 +347,16 @@ function note-sql {
 
     if (-not (Test-Path -LiteralPath $fullPath)) {
         $nowStr = Get-Date -Format 'yyyy-MM-dd HH:mm'
+        $activeDb = if ($global:SqlDefaultDatabase) { $global:SqlDefaultDatabase } else { "master" }
         $header = @"
 -- ==============================================================================
 -- Script: $filename
 -- Fecha:  $nowStr
 -- Autor:  $env:USERNAME
--- Base:   SGA
+-- Base:   $activeDb
 -- ==============================================================================
 
-USE [SGA];
+USE [$activeDb];
 GO
 
 

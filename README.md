@@ -35,10 +35,10 @@ cd "$HOME\Documents\WindowsPowerShell"
 . $PROFILE
 ```
 
-El script [`install.ps1`](file:///C:/Users/diego.corral/OneDrive%20-%20PKF%20ATTEST/Documentos/WindowsPowerShell/install.ps1):
+El script [`install.ps1`](install.ps1):
 - Configura TLS 1.2 y el proveedor NuGet.
 - Instala el módulo oficial `posh-git` desde la **PowerShell Gallery** (`PSGallery`).
-- Inicializa tu [`sql-connections.json`](file:///C:/Users/diego.corral/OneDrive%20-%20PKF%20ATTEST/Documentos/WindowsPowerShell/sql-connections.json) a partir de [`sql-connections.example.json`](file:///C:/Users/diego.corral/OneDrive%20-%20PKF%20ATTEST/Documentos/WindowsPowerShell/sql-connections.example.json) si aún no existe.
+- Inicializa tu `sql-connections.json` a partir de [`sql-connections.example.json`](sql-connections.example.json) si aún no existe.
 - Comprueba la disponibilidad de Neovim, Ripgrep, Lazygit y 7-Zip, sugiriendo comandos de instalación rápida con `winget`.
 
 ---
@@ -165,20 +165,20 @@ Motor de alto rendimiento desacoplado de credenciales y entornos locales mediant
 
 ### Configuración Multientorno (`sql-connections.json`)
 El perfil lee dinámicamente sus conexiones desde `sql-connections.json` en la raíz del perfil (ignorado por Git para máxima seguridad):
-- **Plantilla versionada:** [`sql-connections.example.json`](file:///C:/Users/diego.corral/OneDrive%20-%20PKF%20ATTEST/Documentos/WindowsPowerShell/sql-connections.example.json) sirve como modelo para configurar entornos locales, desarrollo, preproducción o remotos con autenticación integrada o SQL Auth:
+- **Plantilla versionada:** [`sql-connections.example.json`](sql-connections.example.json) sirve como modelo para configurar entornos locales, desarrollo, preproducción o remotos con autenticación integrada o SQL Auth:
 ```json
 {
   "default": "local",
   "connections": {
     "local": {
-      "server": "PORT1220\\SQL_SERVER",
-      "database": "SGA",
+      "server": "localhost\\SQLEXPRESS",
+      "database": "MiBaseDatos",
       "integratedSecurity": true,
-      "description": "Instancia local de desarrollo SGA"
+      "description": "Base de datos local de desarrollo"
     },
     "pre": {
-      "server": "SRV-PRE\\SQL_PRE",
-      "database": "RSGA_PRE",
+      "server": "SRV-PRE\\SQL_SERVER",
+      "database": "MiBaseDatos_PRE",
       "integratedSecurity": true,
       "description": "Entorno de preproducción"
     },

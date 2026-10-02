@@ -345,7 +345,7 @@ function qconnect {
         qconnect
         qconnect pre
         qconnect local
-        qconnect 'SRV\INST' 'SGA'
+        qconnect 'SRV\INST' 'MiBaseDatos'
     #>
     [CmdletBinding()]
     param(

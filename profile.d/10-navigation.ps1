@@ -78,8 +78,8 @@ function proj {
         Navega dinámicamente a cualquier subproyecto dentro de Documentos\Proyectos.
     .EXAMPLE
         proj
-        proj RSGA
-        proj CINFA
+        proj MiProyecto
+        proj ApiBackend
     #>
     param(
         [Parameter(Position = 0)]
