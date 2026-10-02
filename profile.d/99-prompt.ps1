@@ -60,7 +60,7 @@ function prompt {
     # 5. Indicador de fallo en el comando anterior
     if (-not $lastSuccess) {
         $codeTag = if ($lastExitCode -and $lastExitCode -ne 0) { " $lastExitCode" } else { "" }
-        Write-Host " [✖$codeTag]" -ForegroundColor Red -NoNewline
+        Write-Host " [x$codeTag]" -ForegroundColor Red -NoNewline
     }
 
     # 6. Símbolo del prompt con color según estado
