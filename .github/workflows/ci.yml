@@ -28,7 +28,7 @@ jobs:
                   Write-Error "ERROR: El archivo '$($_.FullName)' no tiene BOM UTF-8. Windows PowerShell 5.1 requiere BOM."
                   $failed = $true
               } else {
-                  Write-Host "  ✓ BOM OK: $($_.Name)" -ForegroundColor Green
+                  Write-Host "  [OK] BOM: $($_.Name)" -ForegroundColor Green
               }
           }
           if ($failed) {
@@ -48,7 +48,7 @@ jobs:
                   $errs | ForEach-Object { Write-Host "  - $($_.Message)" -ForegroundColor Red }
                   $totalErrors += $errs.Count
               } else {
-                  Write-Host "  ✓ Sintaxis OK: $($_.Name)" -ForegroundColor Green
+                  Write-Host "  [OK] Sintaxis: $($_.Name)" -ForegroundColor Green
               }
           }
           if ($totalErrors -gt 0) {
@@ -58,16 +58,17 @@ jobs:
       - name: 3. Smoke Test de Carga del Perfil
         shell: powershell
         run: |
-          Write-Host "Comprobando carga del perfil en sesión limpia..." -ForegroundColor Cyan
-          . .\Microsoft.PowerShell_profile.ps1
-          Write-Host "✓ Perfil cargado con éxito sin excepciones." -ForegroundColor Green
+          Write-Host "Comprobando carga del perfil en sesion limpia..." -ForegroundColor Cyan
+          $global:PROFILE = (Resolve-Path ".\Microsoft.PowerShell_profile.ps1").Path
+          . $global:PROFILE
+          Write-Host "[OK] Perfil cargado con exito sin excepciones." -ForegroundColor Green
 
           $testCommands = @('repos', 'phelp', 'scratch', 'sql-ping', 'profile-bench', 'glog', 'gundo', 'gwip', 'gunwip', 'gclean')
           foreach ($c in $testCommands) {
               if (Get-Command $c -ErrorAction SilentlyContinue) {
-                  Write-Host "  ✓ Comando registrado: $c" -ForegroundColor Green
+                  Write-Host "  [OK] Comando registrado: $c" -ForegroundColor Green
               } else {
-                  Write-Error "ERROR: El comando '$c' no se registró correctamente."
+                  Write-Error "ERROR: El comando '$c' no se registro correctamente."
                   exit 1
               }
           }

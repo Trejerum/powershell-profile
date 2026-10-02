@@ -14,10 +14,12 @@
 #   profile.d/99-prompt.ps1      - Prompt interactivo (estado Git + SQL Server)
 # ==============================================================================
 
-$script:ProfileDir = if ($PROFILE -and [string]::IsNullOrWhiteSpace($PROFILE) -eq $false) {
-    Split-Path -Parent $PROFILE
-} elseif ($PSScriptRoot) {
+$script:ProfileDir = if ($PSScriptRoot) {
     $PSScriptRoot
+} elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+} elseif ($PROFILE -and [string]::IsNullOrWhiteSpace($PROFILE) -eq $false -and (Test-Path -LiteralPath $PROFILE)) {
+    Split-Path -Parent $PROFILE
 } else {
     Join-Path ([Environment]::GetFolderPath('MyDocuments')) "WindowsPowerShell"
 }
