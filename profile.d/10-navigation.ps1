@@ -12,6 +12,33 @@ $global:ProjectsRoot = if ($env:PROJECTS_DIR -and (Test-Path -LiteralPath $env:P
 function profile { Set-Location (Split-Path -Parent $PROFILE) }
 function notes   { Set-Location (Join-Path $HOME "Documentos\Notes") }
 
+function nvim-config {
+    <#
+    .SYNOPSIS
+        Navega al directorio de configuración de Neovim ($env:LOCALAPPDATA\nvim).
+    .EXAMPLE
+        nvim-config
+        nvim-config -Edit
+    #>
+    [CmdletBinding()]
+    param(
+        [Alias('e', 'v')]
+        [switch]$Edit
+    )
+    $nvimDir = Join-Path $env:LOCALAPPDATA "nvim"
+    if (-not (Test-Path -LiteralPath $nvimDir)) {
+        Write-Warning "El directorio de configuración de Neovim no existe: $nvimDir"
+        return
+    }
+    Set-Location -LiteralPath $nvimDir
+    if ($Edit) {
+        nvim .
+    }
+}
+Set-Alias cdnvim  nvim-config
+Set-Alias cd-nvim nvim-config
+Set-Alias nvimdir nvim-config
+
 function ep {
     <#
     .SYNOPSIS
@@ -44,7 +71,29 @@ function ep {
     }
     nvim $PROFILE
 }
-function en      { nvim (Join-Path $env:LOCALAPPDATA "nvim") }
+
+function en {
+    <#
+    .SYNOPSIS
+        Abre la configuración de Neovim ($env:LOCALAPPDATA\nvim) o un archivo específico en Neovim.
+    .EXAMPLE
+        en
+        en init.lua
+    #>
+    param(
+        [Parameter(Position = 0)]
+        [string]$File
+    )
+    $nvimDir = Join-Path $env:LOCALAPPDATA "nvim"
+    if ($File) {
+        $target = Join-Path $nvimDir $File
+        if (Test-Path -LiteralPath $target) {
+            nvim $target
+            return
+        }
+    }
+    nvim $nvimDir
+}
 Set-Alias edit-profile ep
 Set-Alias edit-nvim    en
 

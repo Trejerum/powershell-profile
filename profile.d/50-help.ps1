@@ -31,7 +31,8 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "reload"; Sintaxis = "reload"; Detalle = "Recarga el perfil de PowerShell en la consola activa (alias: rel, rprof, reload-profile)"; Ejemplos = @("reload", "rel") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "profile-bench"; Sintaxis = "profile-bench"; Detalle = "Diagnóstico y benchmark del tiempo de arranque y coste de cada módulo del perfil (alias: pbench)"; Ejemplos = @("profile-bench", "pbench") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "ep"; Sintaxis = "ep [modulo]"; Detalle = "Abre `$PROFILE o un módulo específico en Neovim (ej. 'ep sql', 'ep git')"; Ejemplos = @("ep", "ep sql", "ep git") }
-        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "en"; Sintaxis = "en"; Detalle = "Abre la carpeta de configuración de Neovim (~AppData\Local\nvim) en Neovim (alias: edit-nvim)"; Ejemplos = @("en") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "en"; Sintaxis = "en [archivo]"; Detalle = "Abre la carpeta de configuración de Neovim (~AppData\Local\nvim) o un archivo específico en Neovim (alias: edit-nvim)"; Ejemplos = @("en", "en init.lua") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "nvim-config"; Sintaxis = "nvim-config [-Edit]"; Detalle = "Navega a la carpeta de configuración de Neovim (~AppData\Local\nvim) (alias: cdnvim, cd-nvim, nvimdir)"; Ejemplos = @("nvim-config", "cdnvim", "nvim-config -Edit") }
 
         # 1.5. Notas & Diario Developer
         [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "note"; Sintaxis = "note [texto/fecha]"; Detalle = "Abre nota del día en Neovim o realiza capturas rápidas desde consola (alias: today, diario)"; Ejemplos = @("note", "note 'Revisar bug en traspasos'", "note yesterday", "note 2") }
