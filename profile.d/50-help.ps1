@@ -137,6 +137,15 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "gai"; Sintaxis = "gai"; Detalle = "Analiza los cambios en stage (`git diff --staged) y genera un mensaje de commit convencional interactivo"; Ejemplos = @("gai") }
         [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "agy-history"; Sintaxis = "agy-history [n] [filtro]"; Detalle = "Lista el historial de conversaciones recientes de Antigravity con su índice y asunto (alias: achats, agy-chats)"; Ejemplos = @("agy-history", "achats", "agy-history 15") }
         [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "agy-resume"; Sintaxis = "agy-resume [n/ID]"; Detalle = "Reanuda una conversación de Antigravity por índice (1, 2...), ID o selector interactivo fzf (alias: aresume, agy-c)"; Ejemplos = @("agy-resume", "aresume 1", "aresume 8f79c406") }
+
+        # 8. Codex CLI & VS Code
+        [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "codex"; Sintaxis = "codex / cx [prompt]"; Detalle = "Invoca el CLI oficial de OpenAI Codex en modo interactivo o con argumentos (alias: cx)"; Ejemplos = @("codex", "cx", "cx 'Refactoriza este script'", "cx --version") }
+        [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxchats"; Sintaxis = "cxchats [n] [filtro]"; Detalle = "Historial cronológico de hilos de Codex compartidos con VS Code (alias: codex-history, cx-chats)"; Ejemplos = @("cxchats", "cxchats 15", "cxchats 10 'Adobe'") }
+        [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxresume"; Sintaxis = "cxresume [n/ID]"; Detalle = "Reanuda un hilo de VS Code o CLI por índice [1], UUID o menú difuso interactivo fzf (alias: codex-resume, cx-resume, codex-c)"; Ejemplos = @("cxresume", "cxresume 1", "cxresume 01a0fc19") }
+        [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxreview"; Sintaxis = "cxreview"; Detalle = "Ejecuta una revisión automatizada de código con Codex contra los cambios del repo Git (alias: codex-review, cx-review)"; Ejemplos = @("cxreview", "codex-review") }
+        [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxapply"; Sintaxis = "cxapply"; Detalle = "Aplica el último diff o parche producido por el agente de Codex al árbol de trabajo de Git (alias: codex-apply, cx-apply)"; Ejemplos = @("cxapply", "codex-apply") }
+        [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxexec"; Sintaxis = "cxexec <prompt> [-Json]"; Detalle = "Ejecuta tareas en segundo plano en modo no interactivo con Codex (alias: codex-exec, cx-exec)"; Ejemplos = @("cxexec 'Genera un script de backup'", "cxexec -Json 'Analiza este JSON'") }
+        [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxdoctor"; Sintaxis = "cxdoctor"; Detalle = "Diagnóstico exhaustivo de salud, autenticación, base de datos y sandbox de Codex (alias: codex-doctor)"; Ejemplos = @("cxdoctor", "codex-doctor") }
     )
 
     if ($Filter) {

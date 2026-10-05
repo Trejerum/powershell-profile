@@ -8,6 +8,8 @@
 #   profile.d/10-navigation.ps1  - Atajos de carpetas, proyectos y recarga
 #   profile.d/15-notes.ps1       - Gestor de notas, diario developer, captura y Ripgrep
 #   profile.d/20-git.ps1         - Alias de Git, posh-git, vmod, vd y hub de repos (repos)
+#   profile.d/25-ai.ps1          - Asistente IA (Gemini / Antigravity CLI), gai, ask-cmd
+#   profile.d/26-codex.ps1       - Integración OpenAI Codex CLI y sesiones VS Code (cx, cxchats, cxresume)
 #   profile.d/30-sql.ps1         - ADO.NET SQL Toolkit, q, sesiones y autocompletado
 #   profile.d/40-utils.ps1       - Herramientas de sistema, red, procesos e historial
 #   profile.d/50-help.ps1        - Centro de mando interactivo (phelp, ?p)
