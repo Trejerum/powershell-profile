@@ -831,7 +831,7 @@ function nclip {
     $codeFence = '```' + $Lang
     $linesToAppend = @(
         "",
-        "#### 📋 $Title [$timeStr]",
+        "#### $Title [$timeStr]",
         $codeFence,
         $clipJoined.TrimEnd(),
         '```',
@@ -1015,7 +1015,7 @@ function nmeeting {
 
     $template = @(
         "",
-        "### 📅 Reunión: $Title [$timeStr]",
+        "### Reunión: $Title [$timeStr]",
         "- **Asistentes:** ",
         "- **Objetivo / Puntos tratados:**",
         "  - ",
@@ -1060,7 +1060,7 @@ function ntag {
         return
     }
 
-    Write-Host "🔍 Buscando etiqueta #$cleanTag en notas...`n" -ForegroundColor DarkCyan
+    Write-Host "● Buscando etiqueta #$cleanTag en notas...`n" -ForegroundColor DarkCyan
 
     if (Get-Command rg -ErrorAction SilentlyContinue) {
         & rg -i --heading --line-number --color=always $pattern $notesDir
@@ -1169,7 +1169,7 @@ function ngit {
     $targetRepos = @()
 
     if ($isAllRepos) {
-        Write-Host "🔍 Escaneando repositorios en busca de commits propios realizados hoy..." -ForegroundColor DarkCyan
+        Write-Host "● Escaneando repositorios en busca de commits propios realizados hoy..." -ForegroundColor DarkCyan
         $discovered = @()
         if (Get-Command Get-ProfileGitRepositories -ErrorAction SilentlyContinue) {
             $discovered = @(Get-ProfileGitRepositories)
@@ -1275,7 +1275,7 @@ function ngit {
 
         $linesForRepo = @(
             "",
-            "### 🔨 Commits en $repoName [$timeStr]:"
+            "### Commits en $repoName [$timeStr]:"
         ) + $commitList + @("")
 
         $collectedBlocks += ($linesForRepo -join "`r`n") + "`r`n"
@@ -1385,9 +1385,9 @@ function standup {
     }
 
     $reportLines = @()
-    $reportLines += "## 🎙️ Daily Standup - $(Get-Date -Format 'yyyy-MM-dd')"
+    $reportLines += "## Daily Standup - $(Get-Date -Format 'yyyy-MM-dd')"
     $reportLines += ""
-    $reportLines += "### ✅ Ayer $(if ($prevDateStr) { "($prevDateStr)" }):"
+    $reportLines += "### Ayer $(if ($prevDateStr) { "($prevDateStr)" }):"
     if ($doneYesterday.Count -gt 0) {
         foreach ($d in $doneYesterday) {
             $reportLines += "- $d"
@@ -1397,7 +1397,7 @@ function standup {
     }
 
     $reportLines += ""
-    $reportLines += "### 🎯 Hoy:"
+    $reportLines += "### Hoy:"
     if ($pendingToday.Count -gt 0) {
         foreach ($p in $pendingToday) {
             $reportLines += "- $p"
@@ -1407,12 +1407,12 @@ function standup {
     }
 
     $reportLines += ""
-    $reportLines += "### 🚧 Bloqueos / Impedimentos:"
+    $reportLines += "### Bloqueos / Impedimentos:"
     $reportLines += "- Ninguno"
 
     $reportText = $reportLines -join "`r`n"
 
-    Write-Host "`n┌─ 🎙️ Daily Standup ────────────────────────────────────────┐" -ForegroundColor DarkCyan
+    Write-Host "`n┌─ Daily Standup ───────────────────────────────────────────┐" -ForegroundColor DarkCyan
     foreach ($line in $reportLines) {
         if ($line.StartsWith("## ")) {
             Write-Host "  $line" -ForegroundColor Yellow
