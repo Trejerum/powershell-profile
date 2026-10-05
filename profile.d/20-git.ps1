@@ -733,3 +733,233 @@ Register-ArgumentCompleter -CommandName repos,repo-status,proj -ParameterName Ta
     }
 }
 
+# ==============================================================================
+# COMPARACIÓN DE RAMAS: gcompare (alias: gcomp, branch-diff)
+# ==============================================================================
+function gcompare {
+    <#
+    .SYNOPSIS
+        Compara la rama actual contra otra rama (por defecto develop, main o master) mostrando commits por delante, por detrás y archivos modificados.
+    .DESCRIPTION
+        Calcula qué commits tienes pendientes de merge (Ahead / develop..HEAD), qué commits te faltan por traerte (Behind / HEAD..develop) y el resumen de archivos cambiados.
+    .EXAMPLE
+        gcompare
+        gcompare develop
+        gcompare main
+        gcompare origin/develop -Fetch
+        gcompare -Stat
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Target,
+
+        [Alias('f')]
+        [switch]$Fetch,
+
+        [switch]$Stat
+    )
+
+    $gitCheck = git rev-parse --is-inside-work-tree 2>$null
+    if ($gitCheck -ne 'true') {
+        Write-Warning "El directorio actual no es un repositorio Git."
+        return
+    }
+
+    $currentBranch = (git branch --show-current 2>$null)
+    if ([string]::IsNullOrWhiteSpace($currentBranch)) {
+        $currentBranch = (git rev-parse --short HEAD 2>$null)
+    }
+
+    if ($Fetch) {
+        Write-Host "● Sincronizando referencias remotas (git fetch -q)..." -ForegroundColor DarkGray
+        git fetch -q 2>$null
+    }
+
+    # Si no se indica rama destino, buscar candidatas por orden habitual
+    if (-not $Target) {
+        $candidates = @('develop', 'origin/develop', 'main', 'origin/main', 'master', 'origin/master')
+        foreach ($cand in $candidates) {
+            if ($cand -ne $currentBranch -and (git rev-parse --verify --quiet $cand 2>$null)) {
+                $Target = $cand
+                break
+            }
+        }
+    }
+
+    if (-not $Target) {
+        Write-Warning "No se especificó rama de destino y no se detectó develop, main ni master."
+        return
+    }
+
+    # Validar que la rama destino existe
+    $targetHash = git rev-parse --verify --quiet $Target 2>$null
+    if (-not $targetHash) {
+        Write-Error "No se encontró la rama o referencia '$Target'."
+        return
+    }
+
+    $aheadCommits  = @(git log "$Target..HEAD" --format="format:%h|%s|%an|%cr" 2>$null | Where-Object { $_ })
+    $behindCommits = @(git log "HEAD..$Target" --format="format:%h|%s|%an|%cr" 2>$null | Where-Object { $_ })
+    $diffStat = (git diff --shortstat "$Target...HEAD" 2>$null)
+
+    Write-Host "`n=== Comparación de Ramas ===" -ForegroundColor DarkCyan
+    Write-Host "  Rama actual:  " -NoNewline -ForegroundColor DarkGray
+    Write-Host $currentBranch -ForegroundColor Cyan
+    Write-Host "  Rama destino: " -NoNewline -ForegroundColor DarkGray
+    Write-Host $Target -ForegroundColor Yellow
+    Write-Host ""
+
+    # Commits por delante (tuyos pendientes de merge)
+    if ($aheadCommits.Count -gt 0) {
+        Write-Host "  ▲ Ahead: $($aheadCommits.Count) commit(s) pendientes de merge en $Target" -ForegroundColor Green
+        foreach ($c in $aheadCommits) {
+            $parts = $c -split '\|', 4
+            $h = $parts[0]
+            $msg = $parts[1]
+            $author = $parts[2]
+            $relTime = $parts[3]
+            Write-Host "    • [$h] " -NoNewline -ForegroundColor White
+            Write-Host "$msg " -NoNewline -ForegroundColor Gray
+            Write-Host "($author, $relTime)" -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "  ▲ Ahead: 0 commits pendientes (tu rama no tiene commits nuevos sobre $Target)" -ForegroundColor DarkGray
+    }
+
+    Write-Host ""
+
+    # Commits por detrás (te faltan de la rama destino)
+    if ($behindCommits.Count -gt 0) {
+        Write-Host "  ▼ Behind: $($behindCommits.Count) commit(s) en $Target que te faltan por incorporar" -ForegroundColor Yellow
+        foreach ($c in $behindCommits) {
+            $parts = $c -split '\|', 4
+            $h = $parts[0]
+            $msg = $parts[1]
+            $author = $parts[2]
+            $relTime = $parts[3]
+            Write-Host "    • [$h] " -NoNewline -ForegroundColor White
+            Write-Host "$msg " -NoNewline -ForegroundColor Gray
+            Write-Host "($author, $relTime)" -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "  ▼ Behind: 0 commits (tu rama está al día con $Target)" -ForegroundColor DarkGray
+    }
+
+    Write-Host ""
+
+    # Resumen de cambios
+    if ($diffStat) {
+        Write-Host "  Resumen de cambios: $diffStat" -ForegroundColor Cyan
+        if ($Stat) {
+            Write-Host "`nArchivos detallados:" -ForegroundColor DarkGray
+            git diff --stat "$Target...HEAD"
+        } else {
+            Write-Host "  Tip: Usa 'gcompare $Target -Stat' para ver la lista detallada de archivos.`n" -ForegroundColor DarkGray
+        }
+    } elseif ($aheadCommits.Count -eq 0 -and $behindCommits.Count -eq 0) {
+        Write-Host "  ✓ Ambas ramas están perfectamente sincronizadas.`n" -ForegroundColor Green
+    }
+}
+Set-Alias gcomp gcompare
+Set-Alias branch-diff gcompare
+
+# Autocompletado de ramas para gcompare
+if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
+    Register-ArgumentCompleter -CommandName gcompare,gcomp -ParameterName Target -ScriptBlock {
+        param($wordToComplete, $commandAst, $cursorPosition)
+        $branches = git branch --all --color=never 2>$null | ForEach-Object {
+            $_.Trim().Replace('* ', '').Replace('remotes/', '')
+        } | Where-Object { $_ -notmatch 'HEAD ->' } | Select-Object -Unique
+
+        $branches |
+            Where-Object { $_ -like "$wordToComplete*" } |
+            ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', "Rama: $_")
+            }
+    }
+}
+
+# ==============================================================================
+# RESOLUCIÓN RÁPIDA DE CONFLICTOS: gconflict (alias: vconflict, conflicts)
+# ==============================================================================
+function gconflict {
+    <#
+    .SYNOPSIS
+        Detecta archivos con conflictos de merge o rebase activos y los abre en Neovim con Quickfix posicionándose en el primer conflicto.
+    .EXAMPLE
+        gconflict
+        gconflict -List
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$List
+    )
+
+    $gitCheck = git rev-parse --is-inside-work-tree 2>$null
+    if ($gitCheck -ne 'true') {
+        Write-Warning "El directorio actual no es un repositorio Git."
+        return
+    }
+
+    $repoRoot = (git rev-parse --show-toplevel 2>$null)
+    $unmerged = @(git diff --name-only --diff-filter=U 2>$null)
+
+    if ($unmerged.Count -eq 0) {
+        Write-Host "✓ No hay conflictos activos de merge, rebase o cherry-pick." -ForegroundColor Green
+        return
+    }
+
+    Write-Host "`n● Archivos con conflictos activos ($($unmerged.Count)):`n" -ForegroundColor Red
+
+    $items = @()
+    $qfLines = @()
+
+    foreach ($relPath in $unmerged) {
+        $absPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($repoRoot, $relPath))
+        $conflictCount = 0
+
+        if (Test-Path -LiteralPath $absPath) {
+            $lines = [System.IO.File]::ReadAllLines($absPath, [System.Text.Encoding]::UTF8)
+            for ($i = 0; $i -lt $lines.Length; $i++) {
+                if ($lines[$i] -match '^<{7}(\s|$)') {
+                    $conflictCount++
+                    $qfLines += "$($absPath):$($i + 1):1: Conflicto #$conflictCount en $relPath"
+                }
+            }
+        }
+
+        $tag = if ($conflictCount -eq 1) { "1 conflicto" } else { "$conflictCount conflictos" }
+        Write-Host "  [$tag] ".PadRight(18) -ForegroundColor Yellow -NoNewline
+        Write-Host "-> " -ForegroundColor DarkGray -NoNewline
+        Write-Host $relPath -ForegroundColor White
+
+        $items += [PSCustomObject]@{
+            RutaRelativa = $relPath
+            RutaAbsoluta = $absPath
+            Conflictos   = $conflictCount
+        }
+    }
+
+    Write-Host ""
+
+    if ($List) {
+        return
+    }
+
+    # Crear lista Quickfix temporal para Neovim
+    $tempQf = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "conflict_qf_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).txt")
+    try {
+        [System.IO.File]::WriteAllLines($tempQf, $qfLines, [System.Text.UTF8Encoding]::new($false))
+        $targetFiles = @($items | Select-Object -ExpandProperty RutaAbsoluta)
+
+        # Abrir Neovim con pestañas para cada archivo, lista Quickfix (:copen) y cursor en el primer conflicto
+        nvim -p @targetFiles -q $tempQf -c "copen" "+/^[<]\{7\}"
+    }
+    finally {
+        Remove-Item -LiteralPath $tempQf -Force -ErrorAction SilentlyContinue
+    }
+}
+Set-Alias vconflict gconflict
+Set-Alias conflicts gconflict
+
