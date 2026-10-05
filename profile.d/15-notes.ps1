@@ -1236,6 +1236,12 @@ function ngit {
         [System.IO.File]::WriteAllText($todayFile, $header, [System.Text.Encoding]::UTF8)
     }
 
+    $existingText = if (Test-Path -LiteralPath $todayFile) {
+        [System.IO.File]::ReadAllText($todayFile, [System.Text.Encoding]::UTF8)
+    } else {
+        ""
+    }
+
     $timeStr = Get-Date -Format 'HH:mm'
     $collectedBlocks = @()
     $totalCommits = 0
@@ -1270,25 +1276,46 @@ function ngit {
         }
 
         $commitList = if ($commitsRaw -is [array]) { $commitsRaw } else { @($commitsRaw) }
-        $totalCommits += $commitList.Count
+
+        # Deduplicación: descartar commits cuyo hash ya figure en la nota de hoy
+        $newCommits = @()
+        foreach ($c in $commitList) {
+            if ($c -match '-\s*\[([a-f0-9]+)\]') {
+                $hash = $matches[1]
+                if ($existingText.Contains("[$hash]")) {
+                    continue
+                }
+            }
+            $newCommits += $c
+        }
+
+        if ($newCommits.Count -eq 0) {
+            if (-not $isAllRepos) {
+                Write-Host "● Todos los commits de hoy en '$repoName' ya están registrados en $todayStr.md." -ForegroundColor Yellow
+            }
+            continue
+        }
+
+        $totalCommits += $newCommits.Count
         $activeRepoCount++
 
         $linesForRepo = @(
             "",
             "### Commits en $repoName [$timeStr]:"
-        ) + $commitList + @("")
+        ) + $newCommits + @("")
 
         $collectedBlocks += ($linesForRepo -join "`r`n") + "`r`n"
+        $existingText += "`r`n" + ($linesForRepo -join "`r`n")
 
-        Write-Host "✓ $($commitList.Count) commit(s) en $($repoName):" -ForegroundColor Green
-        foreach ($c in $commitList) {
+        Write-Host "✓ $($newCommits.Count) nuevo(s) commit(s) en $($repoName):" -ForegroundColor Green
+        foreach ($c in $newCommits) {
             Write-Host "  $c" -ForegroundColor White
         }
     }
 
     if ($collectedBlocks.Count -eq 0) {
         if ($isAllRepos) {
-            Write-Host "● No se detectaron commits de hoy en ninguno de los $($targetRepos.Count) repositorios escaneados." -ForegroundColor Yellow
+            Write-Host "● Todos los commits de hoy ya estaban registrados en $todayStr.md (sin novedades)." -ForegroundColor Yellow
         }
         return
     }
@@ -1297,7 +1324,7 @@ function ngit {
     [System.IO.File]::AppendAllText($todayFile, $allCrlf, [System.Text.Encoding]::UTF8)
 
     if ($isAllRepos) {
-        Write-Host "`n✓ Total: $totalCommits commit(s) de $activeRepoCount repositorio(s) añadidos a $todayStr.md." -ForegroundColor Green
+        Write-Host "`n✓ Total: $totalCommits nuevo(s) commit(s) de $activeRepoCount repositorio(s) añadidos a $todayStr.md." -ForegroundColor Green
     }
 }
 Set-Alias note-git ngit
