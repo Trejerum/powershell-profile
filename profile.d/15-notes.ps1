@@ -1155,15 +1155,21 @@ function ngit {
         [Parameter(Position = 0)]
         [string]$Target,
 
+        [Parameter(Position = 1)]
+        [string]$Author,
+
         [Alias('All')]
-        [switch]$Repos
+        [switch]$Repos,
+
+        [Alias('Anyone')]
+        [switch]$AllAuthors
     )
 
     $isAllRepos = ($Repos -or ($Target -and $Target -in @('repos', 'all', 'proyectos', '-repos', '-all')))
     $targetRepos = @()
 
     if ($isAllRepos) {
-        Write-Host "🔍 Escaneando repositorios en busca de commits realizados hoy..." -ForegroundColor DarkCyan
+        Write-Host "🔍 Escaneando repositorios en busca de commits propios realizados hoy..." -ForegroundColor DarkCyan
         $discovered = @()
         if (Get-Command Get-ProfileGitRepositories -ErrorAction SilentlyContinue) {
             $discovered = @(Get-ProfileGitRepositories)
@@ -1239,10 +1245,26 @@ function ngit {
         $repoPath = $repo.FullName
         $repoName = $repo.Name
 
-        $commitsRaw = git -C "$repoPath" log --since="midnight" --format="format:- [%h] %s" 2>$null
+        # Filtro de autor: por defecto solo los commits del propio usuario configurado en ese repo
+        $authorFlags = @()
+        if (-not $AllAuthors) {
+            if ($Author) {
+                $authorFlags += @('-F', "--author=$Author")
+            } else {
+                $rEmail = git -C "$repoPath" config user.email 2>$null
+                $rUser  = git -C "$repoPath" config user.name 2>$null
+                if ($rEmail) { $authorFlags += @('-F', "--author=$rEmail") }
+                if ($rUser)  { $authorFlags += @('-F', "--author=$rUser") }
+                if (-not $rEmail -and -not $rUser) {
+                    $authorFlags += @('-F', "--author=$env:USERNAME")
+                }
+            }
+        }
+
+        $commitsRaw = git -C "$repoPath" log --since="midnight" @authorFlags --format="format:- [%h] %s" 2>$null
         if (-not $commitsRaw -or [string]::IsNullOrWhiteSpace(($commitsRaw -join ""))) {
             if (-not $isAllRepos) {
-                Write-Host "● No hay commits registrados hoy en '$repoName'." -ForegroundColor Yellow
+                Write-Host "● No hay commits registrados hoy en '$repoName' para tu usuario." -ForegroundColor Yellow
             }
             continue
         }
