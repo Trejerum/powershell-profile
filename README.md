@@ -162,7 +162,7 @@ El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura r�
   - `gco <rama>`: `git checkout <rama>` con autocompletado inteligente de ramas (o selector difuso `fco` si se pulsa sin argumentos).
   - `glog`: Historial compacto gráfico de los últimos 10 commits.
   - `gss [msg]` / `gsl` / `gsp [idx]`: Guardar, listar y aplicar stashes con timestamps y rama activa.
-  - `agy-review-pr <rama> [base]`: Auditoría de Pull Requests con Antigravity sin saltar de rama.
+  - `agy-review-pr <rama> [base]` (alias `agy-pr-review`): Auditoría de Pull Requests con Antigravity sin saltar de rama.
 
 ---
 

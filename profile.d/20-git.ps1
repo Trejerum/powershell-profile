@@ -133,8 +133,16 @@ function agy-review-pr {
     )
 
     $prompt = @"
+[PR Review: $Branch -> $Base]
+
+Instrucción de título / sesión:
+- Asigna o mantén como título de esta conversación: 'PR Review: $Branch'
+- Asegúrate de que el identificador de la rama '$Branch' aparezca explícitamente en el título y en el resumen de la revisión.
+
+Rol y contexto:
 Actúa como un Senior Software Developer experimentado en calidad de software y proyectos de largo recorrido.
 Analiza la rama remota '$Branch' comparada contra '$Base' sin hacer checkout ni switch de rama.
+
 Pasos:
 1. Ejecuta 'git fetch origin $Branch $Base' si hace falta.
 2. Extrae el diff con 'git diff origin/$Base...origin/$Branch'.
@@ -148,6 +156,7 @@ Pasos:
         agy -i $prompt
     }
 }
+Set-Alias agy-pr-review agy-review-pr
 
 # Abrir archivos modificados/nuevos del repositorio Git en Neovim
 function vmod {

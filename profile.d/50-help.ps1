@@ -88,7 +88,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gsp"; Sintaxis = "gsp [índice]"; Detalle = "Aplica y retira el stash indicado (por defecto el último stash@{0})"; Ejemplos = @("gsp", "gsp 1") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "vmod"; Sintaxis = "vmod [-l] [-Splits]"; Detalle = "Muestra cambios coloreados y los abre en Neovim en pestañas con Quickfix (alias: vdiff)"; Ejemplos = @("vmod", "vmod -List", "vmod -Splits") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "vd"; Sintaxis = "vd [archivo]"; Detalle = "Abre el diff de un archivo en Neovim con vista dividida en paralelo (:diffsplit)"; Ejemplos = @("vd Program.cs", "vd") }
-        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "agy-review-pr"; Sintaxis = "agy-review-pr <rama>"; Detalle = "Audita y analiza una PR con Antigravity comparando contra develop sin cambiar de rama"; Ejemplos = @("agy-review-pr feature/login", "agy-review-pr bugfix/320 main -Print") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "agy-review-pr"; Sintaxis = "agy-review-pr <rama>"; Detalle = "Audita y analiza una PR con Antigravity comparando contra develop sin cambiar de rama (alias: agy-pr-review)"; Ejemplos = @("agy-review-pr feature/login", "agy-pr-review bugfix/320 main -Print") }
 
         # 4. Sistema & Red
         [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "ports"; Sintaxis = "ports [filtro]"; Detalle = "Muestra todos los puertos TCP en escucha con su PID y nombre de proceso (alias: listening)"; Ejemplos = @("ports", "ports 4200", "ports sql") }
