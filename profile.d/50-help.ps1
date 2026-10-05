@@ -33,6 +33,12 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "ep"; Sintaxis = "ep [modulo]"; Detalle = "Abre `$PROFILE o un módulo específico en Neovim (ej. 'ep sql', 'ep git')"; Ejemplos = @("ep", "ep sql", "ep git") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "en"; Sintaxis = "en [archivo]"; Detalle = "Abre la carpeta de configuración de Neovim (~AppData\Local\nvim) o un archivo específico en Neovim (alias: edit-nvim)"; Ejemplos = @("en", "en init.lua") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "nvim-config"; Sintaxis = "nvim-config [-Edit]"; Detalle = "Navega a la carpeta de configuración de Neovim (~AppData\Local\nvim) (alias: cdnvim, cd-nvim, nvimdir)"; Ejemplos = @("nvim-config", "cdnvim", "nvim-config -Edit") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "mark"; Sintaxis = "mark [nombre]"; Detalle = "Guarda la carpeta actual con una etiqueta rápida de navegación compartida entre terminales"; Ejemplos = @("mark", "mark api", "mark logs") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "jump"; Sintaxis = "jump [nombre]"; Detalle = "Navega a un marcador guardado (alias: j, autocompleta con Tab o menú difuso si fzf)"; Ejemplos = @("jump api", "j logs", "j") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "marks"; Sintaxis = "marks"; Detalle = "Lista todos los marcadores guardados y su estado en disco (alias: lmarks)"; Ejemplos = @("marks", "lmarks") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "unmark"; Sintaxis = "unmark <nombre> [-All] [-Clean]"; Detalle = "Elimina un marcador, todos (-All) o purga rutas inexistentes (-Clean)"; Ejemplos = @("unmark api", "unmark -All", "unmark -Clean") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "layout-dev"; Sintaxis = "layout-dev [ruta]"; Detalle = "Abre un espacio de trabajo dividido en Windows Terminal (Neovim + Terminal Git + Terminal SQL) (alias: wtd, dev-layout)"; Ejemplos = @("layout-dev", "wtd mi-proyecto") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "split-term"; Sintaxis = "split-term [-V | -H]"; Detalle = "Divide el panel actual de Windows Terminal en la misma carpeta (alias: split-v, split-h)"; Ejemplos = @("split-term", "split-v", "split-h") }
 
         # 1.5. Notas & Diario Developer
         [PSCustomObject]@{ Categoria = "Notas & Diario"; Comando = "note"; Sintaxis = "note [texto/fecha]"; Detalle = "Abre nota del día en Neovim o realiza capturas rápidas desde consola (alias: today, diario)"; Ejemplos = @("note", "note 'Revisar bug en traspasos'", "note yesterday", "note 2") }
@@ -124,6 +130,11 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Consola & Atajos"; Comando = "KillWord"; Sintaxis = "Ctrl + Backspace"; Detalle = "Elimina la palabra completa anterior en la línea de comandos de forma rápida"; Ejemplos = @("Pulsa Ctrl+Backspace para borrar una palabra") }
         [PSCustomObject]@{ Categoria = "Consola & Atajos"; Comando = "SqlTableCompletion"; Sintaxis = "Ctrl + Espacio"; Detalle = "Autocompletado predictivo inteligente de nombres de tablas y vistas de SQL Server en la consola"; Ejemplos = @("Escribe 'SELECT * FROM Art' y pulsa Ctrl+Espacio") }
         [PSCustomObject]@{ Categoria = "Consola & Atajos"; Comando = "ViEditVisually"; Sintaxis = "Ctrl+X, Ctrl+E"; Detalle = "Abre el comando que estás escribiendo en una ventana de Neovim para edición multilínea compleja"; Ejemplos = @("Pulsa Ctrl+X seguido de Ctrl+E en el prompt") }
+
+        # 7. Asistente IA (Antigravity CLI / agy)
+        [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "??"; Sintaxis = "?? <pregunta en lenguaje natural>"; Detalle = "Traduce lenguaje natural a comando de PowerShell 5.1 con menú para ejecutar o copiar (alias: ask-cmd)"; Ejemplos = @("?? como listar archivos de mas de 100MB", "?? procesos con mas CPU") }
+        [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "explain-error"; Sintaxis = "explain-error"; Detalle = "Analiza el último error de la sesión (`$Error[0]) con IA y explica causa y solución concisa (alias: why-error, perror)"; Ejemplos = @("explain-error", "why-error") }
+        [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "gai"; Sintaxis = "gai"; Detalle = "Analiza los cambios en stage (`git diff --staged) y genera un mensaje de commit convencional interactivo"; Ejemplos = @("gai") }
     )
 
     if ($Filter) {

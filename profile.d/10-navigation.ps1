@@ -232,6 +232,312 @@ function scratch {
 }
 Set-Alias sandbox scratch
 
+# ==============================================================================
+# MARCADORES TEMPORALES DE NAVEGACIÓN (BOOKMARKS)
+# ==============================================================================
+$script:MarksFile = Join-Path $env:LOCALAPPDATA "powershell_marks.json"
+
+function Get-ProfileMarks {
+    if (Test-Path -LiteralPath $script:MarksFile) {
+        try {
+            $raw = [System.IO.File]::ReadAllText($script:MarksFile, [System.Text.Encoding]::UTF8)
+            if ($raw -and $raw.Trim()) {
+                $obj = ConvertFrom-Json $raw
+                $dict = @{}
+                foreach ($prop in $obj.PSObject.Properties) {
+                    $dict[$prop.Name] = $prop.Value
+                }
+                return $dict
+            }
+        } catch { }
+    }
+    return @{}
+}
+
+function Save-ProfileMarks {
+    param([hashtable]$Marks)
+    try {
+        $json = $Marks | ConvertTo-Json -Compress
+        [System.IO.File]::WriteAllText($script:MarksFile, $json, [System.Text.Encoding]::UTF8)
+    } catch {
+        Write-Warning "No se pudieron guardar los marcadores: $_"
+    }
+}
+
+function mark {
+    <#
+    .SYNOPSIS
+        Guarda el directorio actual con una etiqueta rápida de navegación.
+    .EXAMPLE
+        mark
+        mark api
+        mark logs
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Name
+    )
+    $curr = (Get-Location).Path
+    $markName = if ($Name) { $Name.Trim().ToLowerInvariant() } else { (Split-Path -Leaf $curr).ToLowerInvariant() }
+
+    $marks = Get-ProfileMarks
+    $marks[$markName] = $curr
+    Save-ProfileMarks -Marks $marks
+
+    Write-Host "[OK] Marcador guardado: " -NoNewline -ForegroundColor Green
+    Write-Host "$markName" -NoNewline -ForegroundColor Yellow
+    Write-Host " -> $curr" -ForegroundColor DarkGray
+}
+
+function jump {
+    <#
+    .SYNOPSIS
+        Navega rápidamente a un directorio marcado previamente.
+    .EXAMPLE
+        jump api
+        j logs
+        j (abre menú difuso si fzf está instalado)
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Name
+    )
+    $marks = Get-ProfileMarks
+    if ($marks.Count -eq 0) {
+        Write-Host "● No hay marcadores guardados todavía. Usa 'mark [nombre]' para guardar la carpeta actual." -ForegroundColor DarkGray
+        return
+    }
+
+    $targetName = if ($Name) { $Name.Trim().ToLowerInvariant() } else { "" }
+
+    if (-not $targetName) {
+        if (Get-Command fzf -ErrorAction SilentlyContinue) {
+            $lines = foreach ($k in ($marks.Keys | Sort-Object)) { "$($k.PadRight(16)) -> $($marks[$k])" }
+            $selected = $lines | fzf --prompt="Marcadores > " --height=40% --reverse
+            if ($selected) {
+                $targetName = ($selected.Split(' ')[0]).Trim().ToLowerInvariant()
+            } else {
+                return
+            }
+        } else {
+            marks
+            return
+        }
+    }
+
+    if ($marks.ContainsKey($targetName)) {
+        $path = $marks[$targetName]
+        if (Test-Path -LiteralPath $path) {
+            Set-Location -LiteralPath $path
+            Write-Host "[OK] Salto a [$targetName]: $path" -ForegroundColor Green
+        } else {
+            Write-Warning "La ruta del marcador '$targetName' no existe en disco: $path"
+            Write-Host "Tip: Usa 'unmark -Clean' para purgar marcadores obsoletos." -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Warning "No existe ningún marcador llamado '$targetName'."
+        Write-Host "Usa 'marks' para ver la lista de marcadores disponibles." -ForegroundColor DarkGray
+    }
+}
+Set-Alias j jump
+
+function marks {
+    <#
+    .SYNOPSIS
+        Lista todos los marcadores de navegación guardados y su estado.
+    .EXAMPLE
+        marks
+    #>
+    [CmdletBinding()]
+    param()
+
+    $marks = Get-ProfileMarks
+    if ($marks.Count -eq 0) {
+        Write-Host "`n● No hay marcadores activos. Usa 'mark [nombre]' en cualquier carpeta.`n" -ForegroundColor DarkGray
+        return
+    }
+
+    Write-Host "`n=== Marcadores de Navegación ($($marks.Count)) ===`n" -ForegroundColor DarkCyan
+    foreach ($k in ($marks.Keys | Sort-Object)) {
+        $path = $marks[$k]
+        $exists = Test-Path -LiteralPath $path
+        Write-Host "  $($k.PadRight(18))" -NoNewline -ForegroundColor Yellow
+        Write-Host "$path " -NoNewline -ForegroundColor $(if ($exists) { "Cyan" } else { "DarkRed" })
+        if (-not $exists) {
+            Write-Host "[RUTA NO ENCONTRADA]" -ForegroundColor Red
+        } else {
+            Write-Host ""
+        }
+    }
+    Write-Host ""
+}
+Set-Alias lmarks marks
+
+function unmark {
+    <#
+    .SYNOPSIS
+        Elimina uno, varios o todos los marcadores guardados.
+    .EXAMPLE
+        unmark api
+        unmark -All
+        unmark -Clean
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Name,
+
+        [switch]$All,
+        [switch]$Clean,
+        [switch]$Force
+    )
+
+    $marks = Get-ProfileMarks
+    if ($marks.Count -eq 0) {
+        Write-Host "● No hay marcadores guardados." -ForegroundColor DarkGray
+        return
+    }
+
+    if ($All -or $Name -eq "*") {
+        if ($Force -or $PSCmdlet.ShouldContinue("¿Seguro que deseas eliminar TODOS los marcadores ($($marks.Count))?", "Confirmar eliminación total")) {
+            Save-ProfileMarks -Marks @{}
+            Write-Host "[OK] Todos los marcadores han sido eliminados." -ForegroundColor Green
+        }
+        return
+    }
+
+    if ($Clean) {
+        $toRemove = @()
+        foreach ($k in $marks.Keys) {
+            if (-not (Test-Path -LiteralPath $marks[$k])) {
+                $toRemove += $k
+            }
+        }
+        if ($toRemove.Count -eq 0) {
+            Write-Host "[OK] No hay marcadores huérfanos. Todas las rutas existen." -ForegroundColor Green
+            return
+        }
+        foreach ($k in $toRemove) {
+            $marks.Remove($k)
+        }
+        Save-ProfileMarks -Marks $marks
+        Write-Host "[OK] Limpieza completada: $($toRemove.Count) marcadores obsoletos eliminados ($($toRemove -join ', '))." -ForegroundColor Green
+        return
+    }
+
+    if (-not $Name) {
+        Write-Warning "Especifica el nombre del marcador a eliminar (ej. 'unmark api'), o usa 'unmark -All' o 'unmark -Clean'."
+        return
+    }
+
+    $targetName = $Name.Trim().ToLowerInvariant()
+    if ($marks.ContainsKey($targetName)) {
+        $marks.Remove($targetName)
+        Save-ProfileMarks -Marks $marks
+        Write-Host "[OK] Marcador '$targetName' eliminado correctamente." -ForegroundColor Green
+    } else {
+        Write-Warning "No se encontró el marcador '$targetName'."
+    }
+}
+
+# Autocompletado con Tabulador para jump y unmark
+if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
+    $script:MarkCompleter = {
+        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+        $marks = Get-ProfileMarks
+        $marks.Keys | Where-Object { $_ -like "$wordToComplete*" } | Sort-Object | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', "$_ -> $($marks[$_])")
+        }
+    }
+    Register-ArgumentCompleter -CommandName jump   -ParameterName Name -ScriptBlock $script:MarkCompleter
+    Register-ArgumentCompleter -CommandName j      -ParameterName Name -ScriptBlock $script:MarkCompleter
+    Register-ArgumentCompleter -CommandName unmark -ParameterName Name -ScriptBlock $script:MarkCompleter
+}
+
+# ==============================================================================
+# WINDOWS TERMINAL WORKSPACE LAYOUTS
+# ==============================================================================
+function layout-dev {
+    <#
+    .SYNOPSIS
+        Abre un espacio de trabajo dividido en Windows Terminal (Neovim + Terminal Git + Terminal SQL/Soporte).
+    .EXAMPLE
+        layout-dev
+        layout-dev mi-proyecto
+        wtd
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Path
+    )
+
+    if (-not (Get-Command wt -ErrorAction SilentlyContinue)) {
+        Write-Warning "Windows Terminal (wt.exe) no está instalado o no se encuentra en el PATH."
+        return
+    }
+
+    $targetPath = if ($Path) {
+        if (Test-Path -LiteralPath $Path) {
+            (Resolve-Path $Path).Path
+        } else {
+            $inProjects = Join-Path $global:ProjectsRoot $Path
+            if (Test-Path -LiteralPath $inProjects) {
+                (Resolve-Path $inProjects).Path
+            } else {
+                (Get-Location).Path
+            }
+        }
+    } else {
+        (Get-Location).Path
+    }
+
+    Write-Host "🚀 Iniciando layout dev en: $targetPath" -ForegroundColor Cyan
+
+    $wtArgs = @(
+        "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"nvim .`"",
+        ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe",
+        ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe"
+    )
+
+    Start-Process wt.exe -ArgumentList $wtArgs
+}
+Set-Alias wtd layout-dev
+Set-Alias dev-layout layout-dev
+
+function split-term {
+    <#
+    .SYNOPSIS
+        Divide el panel actual de Windows Terminal en la misma carpeta.
+    .EXAMPLE
+        split-term          # Divide verticalmente (panel a la derecha)
+        split-term -H       # Divide horizontalmente (panel abajo)
+        split-v
+        split-h
+    #>
+    [CmdletBinding()]
+    param(
+        [Alias('v')]
+        [switch]$Vertical,
+
+        [Alias('h')]
+        [switch]$Horizontal
+    )
+    if (-not (Get-Command wt -ErrorAction SilentlyContinue)) {
+        Write-Warning "Windows Terminal (wt.exe) no está instalado o no se encuentra en el PATH."
+        return
+    }
+
+    $curr = (Get-Location).Path
+    $splitFlag = if ($Horizontal) { "-H" } else { "-V" }
+
+    Start-Process wt.exe -ArgumentList @("-w", "0", "split-pane", $splitFlag, "-d", "`"$curr`"", "powershell.exe")
+}
+function split-v { split-term -Vertical }
+function split-h { split-term -Horizontal }
+
 # Recargar el perfil de PowerShell en la sesión actual
 function reload {
     <#
@@ -239,7 +545,7 @@ function reload {
         Recarga el perfil activo de PowerShell en la consola actual.
     #>
     . $PROFILE
-    Write-Host "✓ Perfil de PowerShell recargado correctamente." -ForegroundColor Green
+    Write-Host "[OK] Perfil de PowerShell recargado correctamente." -ForegroundColor Green
 }
 Set-Alias rel reload
 Set-Alias rprof reload
