@@ -96,11 +96,15 @@ function codex {
         return
     }
 
-    if ($ArgumentList -and $ArgumentList.Count -gt 0) {
-        & $exe @ArgumentList
-    } else {
-        & $exe
+    $finalArgs = @()
+    if ($ArgumentList -notcontains '--no-daemon') {
+        $finalArgs += '--no-daemon'
     }
+    if ($ArgumentList -and $ArgumentList.Count -gt 0) {
+        $finalArgs += $ArgumentList
+    }
+
+    & $exe @finalArgs
 }
 Set-Alias cx codex
 
@@ -232,7 +236,7 @@ function codex-resume {
                 if ($selected -match '\|\s*([a-f0-9\-]{36})\s*\|') {
                     $selectedId = $matches[1]
                     Write-Host "▶ Reanudando hilo de Codex: $selectedId`n" -ForegroundColor DarkCyan
-                    & $exe resume $selectedId
+                    & $exe --no-daemon resume $selectedId
                     return
                 }
             } else {
@@ -241,7 +245,7 @@ function codex-resume {
             }
         } else {
             Write-Host "▶ Reanudando la sesión más reciente de Codex (--last)...`n" -ForegroundColor DarkCyan
-            & $exe resume --last
+            & $exe --no-daemon resume --last
             return
         }
     }
@@ -252,7 +256,7 @@ function codex-resume {
         $found = $convs | Where-Object { $_.Index -eq $targetIdx }
         if ($found) {
             Write-Host "▶ Reanudando hilo [$($found.Index)]: '$($found.Titulo)' ($($found.IDShort))...`n" -ForegroundColor DarkCyan
-            & $exe resume $found.ID
+            & $exe --no-daemon resume $found.ID
             return
         } else {
             Write-Warning "No se encontró ninguna conversación con el índice [$targetIdx]. Usa 'cxchats' para ver los índices disponibles."
@@ -265,10 +269,10 @@ function codex-resume {
     if ($matching) {
         $first = $matching[0]
         Write-Host "▶ Reanudando hilo: '$($first.Titulo)' ($($first.IDShort))...`n" -ForegroundColor DarkCyan
-        & $exe resume $first.ID
+        & $exe --no-daemon resume $first.ID
     } else {
         Write-Host "▶ Intentando reanudar sesión '$Target' en Codex...`n" -ForegroundColor DarkCyan
-        & $exe resume $Target
+        & $exe --no-daemon resume $Target
     }
 }
 Set-Alias cxresume codex-resume
@@ -299,7 +303,7 @@ function codex-review {
     }
 
     Write-Host "🔍 Iniciando revisión de código con Codex..." -ForegroundColor Cyan
-    & $exe review
+    & $exe --no-daemon review
 }
 Set-Alias cxreview codex-review
 Set-Alias cx-review codex-review
@@ -307,13 +311,16 @@ Set-Alias cx-review codex-review
 function codex-apply {
     <#
     .SYNOPSIS
-        Aplica el diff más reciente generado por Codex al árbol de trabajo de Git.
+        Aplica el diff más reciente o por Task ID generado por Codex al árbol de trabajo de Git.
     .EXAMPLE
         codex-apply
         cxapply
     #>
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Position = 0)]
+        [string]$TaskId
+    )
 
     $exe = Get-CodexExe
     if (-not $exe) {
@@ -321,8 +328,12 @@ function codex-apply {
         return
     }
 
-    Write-Host "▶ Aplicando último parche de Codex con 'git apply'..." -ForegroundColor Cyan
-    & $exe apply
+    Write-Host "▶ Aplicando parche de Codex con 'git apply'..." -ForegroundColor Cyan
+    if ($TaskId) {
+        & $exe --no-daemon apply $TaskId
+    } else {
+        & $exe --no-daemon apply
+    }
 }
 Set-Alias cxapply codex-apply
 Set-Alias cx-apply codex-apply
@@ -349,7 +360,7 @@ function codex-exec {
         return
     }
 
-    $callArgs = @("exec")
+    $callArgs = @("--no-daemon", "exec")
     if ($Json) { $callArgs += "--json" }
     $callArgs += $Prompt
 
@@ -375,7 +386,7 @@ function codex-doctor {
         return
     }
 
-    & $exe doctor
+    & $exe --no-daemon doctor
 }
 Set-Alias cxdoctor codex-doctor
 
