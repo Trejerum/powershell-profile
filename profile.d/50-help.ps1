@@ -135,6 +135,8 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "??"; Sintaxis = "?? <pregunta en lenguaje natural>"; Detalle = "Traduce lenguaje natural a comando de PowerShell 5.1 con menú para ejecutar o copiar (alias: ask-cmd)"; Ejemplos = @("?? como listar archivos de mas de 100MB", "?? procesos con mas CPU") }
         [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "explain-error"; Sintaxis = "explain-error"; Detalle = "Analiza el último error de la sesión (`$Error[0]) con IA y explica causa y solución concisa (alias: why-error, perror)"; Ejemplos = @("explain-error", "why-error") }
         [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "gai"; Sintaxis = "gai"; Detalle = "Analiza los cambios en stage (`git diff --staged) y genera un mensaje de commit convencional interactivo"; Ejemplos = @("gai") }
+        [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "agy-history"; Sintaxis = "agy-history [n] [filtro]"; Detalle = "Lista el historial de conversaciones recientes de Antigravity con su índice y asunto (alias: achats, agy-chats)"; Ejemplos = @("agy-history", "achats", "agy-history 15") }
+        [PSCustomObject]@{ Categoria = "Asistente IA"; Comando = "agy-resume"; Sintaxis = "agy-resume [n/ID]"; Detalle = "Reanuda una conversación de Antigravity por índice (1, 2...), ID o selector interactivo fzf (alias: aresume, agy-c)"; Ejemplos = @("agy-resume", "aresume 1", "aresume 8f79c406") }
     )
 
     if ($Filter) {

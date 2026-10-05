@@ -41,10 +41,20 @@ Antigravity CLI         OpenAI / Azure        Ollama Local
 | `ask-cmd <consulta>` | `??` | Traduce una petición en lenguaje natural a código ejecutable de PowerShell 5.1 con menú interactivo (`[E]jecutar`, `[C]opiar`, `[S]alir`). |
 | `explain-error` | `why-error`, `perror` | Analiza el último error del sistema (`$Error[0]`) y explica causa raíz y solución recomendada en 3 líneas concisas. |
 | `gai` | - | Analiza los cambios en stage (`git diff --staged`) y redacta una propuesta de commit bajo la convención *Conventional Commits* con menú interactivo. |
+| `agy-history [n] [filtro]` | `achats`, `agy-chats` | Lista el historial de conversaciones anteriores de Antigravity con su fecha, índice e intención inicial. |
+| `agy-resume [n/ID]` | `aresume`, `agy-c` | Reanuda una conversación por su índice (`aresume 1`), ID (`aresume 8f79c406`) o selector interactivo con `fzf`. |
 
 ---
 
-## 3. 🚀 Configuración de Antigravity CLI (`agy`) en un Nuevo Equipo
+## 3. 💾 Persistencia y Gestión de Conversaciones
+
+Las conversaciones de Antigravity son 100% persistentes y se guardan localmente en el disco duro:
+* **Ubicación física**: `~/.gemini/antigravity-cli/brain/<UUID-conversacion>/`
+* **Transcripts completos**: Cada carpeta contiene `.system_generated\logs\transcript.jsonl` con el registro de mensajes, preguntas y respuestas.
+* **Continuar la última conversación**: Escribe `aresume` (o `agy -c`) desde cualquier sesión de PowerShell para retomar la última sesión abierta.
+* **Reanudar por número**: Ejecuta `achats` para ver las conversaciones recientes numeradas (`[1], [2], [3]...`) y escribe `aresume <n>` (ej. `aresume 2`) para saltar a ella al instante.
+
+## 4. 🚀 Configuración de Antigravity CLI (`agy`) en un Nuevo Equipo
 
 El proveedor configurado por defecto es **Antigravity CLI** (`agy`), que utiliza modelos Gemini con inferencia rápida optimizada para terminal (`--effort low`).
 
@@ -89,7 +99,7 @@ Si estás en una máquina virtual o servidor donde no puedes abrir un navegador 
 
 ---
 
-## 4. 🔄 Cómo Cambiar de Proveedor en el Futuro
+## 5. 🔄 Cómo Cambiar de Proveedor en el Futuro
 
 Si en el futuro deseas cambiar `agy` por otro servicio (como Ollama local o una API de OpenAI/Azure):
 
