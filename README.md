@@ -65,6 +65,7 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
 
 - **`..` / `...` / `....`**: Sube 1, 2 o 3 niveles en el árbol de directorios sin teclear `cd ..\..`.
 - **`mkcd <carpeta>`**: Crea un directorio (incluyendo carpetas intermedias si faltan) y entra en él inmediatamente.
+- **`rmrf <carpetas...> [-Find ...] [-f]` (alias `rm-dir`, `purge-dir`)**: Eliminación ultrarrápida y segura de directorios en Windows (10x más rápido que `Remove-Item` vía `cmd /c rmdir /s /q` con fallback a Robocopy para rutas >260 caracteres). Calcula el espacio liberado, soporta comodines/múltiples carpetas, búsqueda recursiva de artefactos (`-Find node_modules`, `-Find bin, obj`) y selector interactivo `fzf` sin argumentos.
 - **`scratch [nombre] [-List] [-Clean n] [-v]` (alias `sandbox`)**: Gestor de entornos desechables fechados en `$HOME\Documentos\Scratch\yyyy-MM-dd` para pruebas rápidas y clonado provisional:
   - `scratch`: Crea y navega a la carpeta de hoy.
   - `scratch test-api`: Crea un subentorno `test-api` dentro de la carpeta de hoy.

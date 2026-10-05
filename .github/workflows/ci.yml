@@ -63,7 +63,7 @@ jobs:
           . $global:PROFILE
           Write-Host "[OK] Perfil cargado con exito sin excepciones." -ForegroundColor Green
 
-          $testCommands = @('repos', 'phelp', 'scratch', 'sql-ping', 'profile-bench', 'glog', 'gundo', 'gwip', 'gunwip', 'gclean', 'mark', 'jump', 'marks', 'unmark', 'layout-dev', 'ask-cmd', 'explain-error', 'gai', 'agy-history', 'agy-resume', 'codex', 'codex-history', 'codex-resume', 'codex-review', 'codex-apply', 'codex-exec', 'codex-doctor', 'nclip', 'ntopic', 'ltopics', 'nmeeting', 'ntag', 'ltags', 'ngit', 'standup', 'clip-diff', 'watch', 'gcompare', 'gconflict', 'gshow', 'vshow', 'gfind')
+          $testCommands = @('repos', 'phelp', 'scratch', 'sql-ping', 'profile-bench', 'glog', 'gundo', 'gwip', 'gunwip', 'gclean', 'mark', 'jump', 'marks', 'unmark', 'layout-dev', 'ask-cmd', 'explain-error', 'gai', 'agy-history', 'agy-resume', 'codex', 'codex-history', 'codex-resume', 'codex-review', 'codex-apply', 'codex-exec', 'codex-doctor', 'nclip', 'ntopic', 'ltopics', 'nmeeting', 'ntag', 'ltags', 'ngit', 'standup', 'clip-diff', 'watch', 'gcompare', 'gconflict', 'gshow', 'vshow', 'gfind', 'rmrf', 'rm-dir')
           foreach ($c in $testCommands) {
               if (Get-Command $c -ErrorAction SilentlyContinue) {
                   Write-Host "  [OK] Comando registrado: $c" -ForegroundColor Green

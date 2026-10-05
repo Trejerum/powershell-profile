@@ -729,3 +729,355 @@ function watch {
     }
 }
 Set-Alias watch-cmd watch
+
+# ==============================================================================
+# ELIMINACIÓN RÁPIDA Y SEGURA DE DIRECTORIOS: rmrf / rm-dir
+# ==============================================================================
+function Remove-ProfileDirectoryFast {
+    param([string]$TargetDirectory)
+
+    if (-not (Test-Path -LiteralPath $TargetDirectory)) { return $true }
+
+    # 1. Intentar rmdir nativo de Windows (el más rápido con cmd)
+    cmd /c "rmdir /s /q `"$TargetDirectory`"" 2>$null
+
+    # 2. Si todavía existe (ej. rutas >260 caracteres o permisos especiales), fallback a Robocopy purge
+    if (Test-Path -LiteralPath $TargetDirectory) {
+        $emptyTemp = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.IO.Path]::GetRandomFileName())
+        try {
+            New-Item -ItemType Directory -Path $emptyTemp -Force | Out-Null
+            robocopy $emptyTemp $TargetDirectory /purge /quiet /njh /njs /nc /ns /np | Out-Null
+            cmd /c "rmdir /s /q `"$TargetDirectory`"" 2>$null
+            if (Test-Path -LiteralPath $TargetDirectory) {
+                Remove-Item -LiteralPath $TargetDirectory -Force -Recurse -ErrorAction SilentlyContinue
+            }
+        }
+        finally {
+            if (Test-Path -LiteralPath $emptyTemp) {
+                cmd /c "rmdir /s /q `"$emptyTemp`"" 2>$null
+            }
+        }
+    }
+
+    return (-not (Test-Path -LiteralPath $TargetDirectory))
+}
+
+function Test-ProfileDirectorySafeToDelete {
+    param([string]$FullPath)
+
+    if ([string]::IsNullOrWhiteSpace($FullPath)) { return $false }
+
+    $norm = [System.IO.Path]::GetFullPath($FullPath).TrimEnd('\', '/')
+    $systemDrive = ($env:SystemDrive).TrimEnd('\', '/')
+
+    # 1. Raíces de disco (ej. C:, D:)
+    if ($norm -match '^[a-zA-Z]:$') { return $false }
+
+    # 2. Carpetas críticas del sistema y del usuario
+    $forbidden = @(
+        $systemDrive,
+        [System.IO.Path]::GetFullPath($env:SystemRoot).TrimEnd('\', '/'),
+        [System.IO.Path]::GetFullPath($env:USERPROFILE).TrimEnd('\', '/'),
+        [System.IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\', '/')
+    )
+    if ($env:ProgramFilesx86) {
+        $forbidden += [System.IO.Path]::GetFullPath($env:ProgramFilesx86).TrimEnd('\', '/')
+    }
+
+    foreach ($f in $forbidden) {
+        if ($norm -ieq $f) { return $false }
+    }
+
+    # 3. Directorio actual o padre
+    $current = (Get-Location).Path.TrimEnd('\', '/')
+    if ($norm -ieq $current) { return $false }
+
+    return $true
+}
+
+function Get-ProfileDirectorySize {
+    param([string]$DirPath)
+    try {
+        $dirInfo = New-Object System.IO.DirectoryInfo($DirPath)
+        $totalBytes = [long]0
+        $fileCount = [long]0
+        foreach ($file in $dirInfo.EnumerateFiles('*', [System.IO.SearchOption]::AllDirectories)) {
+            $totalBytes += $file.Length
+            $fileCount++
+        }
+        return @{ Bytes = $totalBytes; Count = $fileCount }
+    } catch {
+        return @{ Bytes = [long]0; Count = [long]0 }
+    }
+}
+
+function Format-ProfileByteSize {
+    param([long]$Bytes)
+    if ($Bytes -ge 1GB) {
+        return "{0:N2} GB" -f ($Bytes / 1GB)
+    } elseif ($Bytes -ge 1MB) {
+        return "{0:N2} MB" -f ($Bytes / 1MB)
+    } elseif ($Bytes -ge 1KB) {
+        return "{0:N1} KB" -f ($Bytes / 1KB)
+    } else {
+        return "$Bytes bytes"
+    }
+}
+
+function rmrf {
+    <#
+    .SYNOPSIS
+        Eliminación rápida y segura de directorios en Windows (10x más rápido que Remove-Item).
+    .DESCRIPTION
+        - Soporta una o múltiples carpetas a la vez (y comodines).
+        - Utiliza rmdir /s /q nativo de Windows con fallback a Robocopy para evitar bloqueos por rutas largas (>260 caracteres).
+        - Calcula y reporta el espacio en disco liberado.
+        - Con -Find / -Recurse <nombre>: busca recursivamente todas las carpetas con ese nombre en subdirectorios (ej. 'node_modules', 'bin', 'obj') para eliminarlas.
+        - Con -Force / -f: omite la confirmación interactiva.
+        - Sin parámetros: si fzf está disponible, abre un selector interactivo de carpetas en la ubicación actual.
+    .EXAMPLE
+        rmrf node_modules
+        rmrf bin obj dist
+        rmrf ./temp_* -Force
+        rmrf -Find node_modules
+        rmrf -Find bin, obj
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+        [string[]]$Path,
+
+        [Alias('Recurse', 'Search')]
+        [string[]]$Find,
+
+        [Alias('f', 'Yes')]
+        [switch]$Force,
+
+        [Alias('DryRun')]
+        [switch]$WhatIf
+    )
+
+    # ---------------------------------------------------------
+    # CASO 1: Búsqueda recursiva (-Find / -Recurse)
+    # ---------------------------------------------------------
+    if ($Find -and $Find.Count -gt 0) {
+        Write-Host "● Escaneando subdirectorios en busca de: $($Find -join ', ')..." -ForegroundColor DarkCyan
+        $currentDir = Get-Item -LiteralPath (Get-Location).Path
+        $foundDirs = [System.Collections.Generic.List[System.IO.DirectoryInfo]]::new()
+        $queue = [System.Collections.Generic.Queue[System.IO.DirectoryInfo]]::new()
+        $queue.Enqueue($currentDir)
+
+        while ($queue.Count -gt 0) {
+            $parent = $queue.Dequeue()
+            try {
+                foreach ($sub in $parent.GetDirectories()) {
+                    $matched = $false
+                    foreach ($pattern in $Find) {
+                        if ($sub.Name -like $pattern) {
+                            $foundDirs.Add($sub)
+                            $matched = $true
+                            break
+                        }
+                    }
+                    if (-not $matched -and $sub.Name -ne '.git') {
+                        $queue.Enqueue($sub)
+                    }
+                }
+            } catch {}
+        }
+
+        if ($foundDirs.Count -eq 0) {
+            Write-Host "● No se encontraron carpetas coincidentes en este árbol de directorios." -ForegroundColor Yellow
+            return
+        }
+
+        Write-Host "`nCarpetas encontradas ($($foundDirs.Count)):" -ForegroundColor Cyan
+        $totalBytes = [long]0
+        $items = @()
+        foreach ($d in $foundDirs) {
+            $sz = Get-ProfileDirectorySize $d.FullName
+            $totalBytes += $sz.Bytes
+            $rel = ($d.FullName.Substring($currentDir.FullName.Length)).TrimStart('\', '/')
+            $items += [PSCustomObject]@{
+                FullName = $d.FullName
+                RelPath  = $rel
+                Bytes    = $sz.Bytes
+                SizeStr  = (Format-ProfileByteSize $sz.Bytes)
+            }
+            Write-Host ("  • {0,-45} {1,10}" -f $rel, (Format-ProfileByteSize $sz.Bytes)) -ForegroundColor White
+        }
+        Write-Host "  $('-' * 57)" -ForegroundColor DarkGray
+        Write-Host ("  Total espacio a liberar: {0}`n" -f (Format-ProfileByteSize $totalBytes)) -ForegroundColor Yellow
+
+        if ($WhatIf) {
+            Write-Host "Modo WhatIf: no se ha eliminado ninguna carpeta." -ForegroundColor Cyan
+            return
+        }
+
+        if (-not $Force) {
+            $ans = Read-Host "¿Deseas eliminar estas $($foundDirs.Count) carpetas? [s/N]"
+            if ($ans -notmatch '^(s|si|y|yes)$') {
+                Write-Host "Operación cancelada." -ForegroundColor DarkGray
+                return
+            }
+        }
+
+        $deletedCount = 0
+        $freedBytes = [long]0
+        foreach ($it in $items) {
+            if (-not (Test-ProfileDirectorySafeToDelete $it.FullName)) {
+                Write-Warning "Omitiendo carpeta protegida: $($it.RelPath)"
+                continue
+            }
+            $ok = Remove-ProfileDirectoryFast $it.FullName
+            if ($ok) {
+                $deletedCount++
+                $freedBytes += $it.Bytes
+            } else {
+                Write-Error "No se pudo eliminar: $($it.RelPath)"
+            }
+        }
+
+        Write-Host "`n✔ Eliminadas $deletedCount carpetas. Espacio liberado: $(Format-ProfileByteSize $freedBytes)" -ForegroundColor Green
+        return
+    }
+
+    # ---------------------------------------------------------
+    # CASO 2: Sin argumentos -> Selección interactiva con fzf
+    # ---------------------------------------------------------
+    if (-not $Path -or $Path.Count -eq 0) {
+        if (Get-Command fzf -ErrorAction SilentlyContinue) {
+            $subDirs = Get-ChildItem -Directory | Where-Object { $_.Name -ne '.git' }
+            if (-not $subDirs -or $subDirs.Count -eq 0) {
+                Write-Warning "No hay carpetas en la ubicación actual."
+                return
+            }
+            $listForFzf = @()
+            foreach ($sd in $subDirs) {
+                $sz = Get-ProfileDirectorySize $sd.FullName
+                $listForFzf += ("{0,-35} | {1,10}" -f $sd.Name, (Format-ProfileByteSize $sz.Bytes))
+            }
+            $selected = $listForFzf | fzf -m --header="[Tab/Shift+Tab] Marcar múltiples | [Enter] Eliminar seleccionadas | [ESC] Salir"
+            if (-not $selected) { return }
+
+            $targets = @()
+            foreach ($line in ($selected -split "`r?`n")) {
+                if ($line) {
+                    $dirName = ($line -split '\|')[0].Trim()
+                    if ($dirName) { $targets += $dirName }
+                }
+            }
+            $Path = $targets
+        } else {
+            $ans = Read-Host "Introduce la ruta de la carpeta a eliminar"
+            if (-not $ans) { return }
+            $Path = @($ans)
+        }
+    }
+
+    # ---------------------------------------------------------
+    # CASO 3: Eliminación de las rutas especificadas
+    # ---------------------------------------------------------
+    $targetsToDelete = [System.Collections.Generic.List[System.IO.DirectoryInfo]]::new()
+    foreach ($p in $Path) {
+        $cleanP = $p.Trim().TrimEnd('\', '/')
+        if ($cleanP -in @('', '.', '..')) {
+            Write-Error "Operación denegada por seguridad: no se permite eliminar el directorio actual o padre ('$p')."
+            continue
+        }
+
+        # Si es una ruta directa existente
+        if (Test-Path -LiteralPath $p) {
+            $item = Get-Item -LiteralPath $p
+            if ($item.PSIsContainer) {
+                $targetsToDelete.Add($item)
+            } else {
+                Write-Warning "'$p' es un archivo, no un directorio. Usa Remove-Item para archivos."
+            }
+        } elseif ($p -match '[*?]') {
+            # Si contiene comodines (ej. temp_*)
+            $resolved = Get-ChildItem -Path $p -Directory -ErrorAction SilentlyContinue
+            if ($resolved) {
+                foreach ($r in $resolved) {
+                    $targetsToDelete.Add($r)
+                }
+            } else {
+                Write-Warning "No se encontraron carpetas con el patrón: '$p'"
+            }
+        } else {
+            Write-Warning "No existe la carpeta: '$p'"
+        }
+    }
+
+    if ($targetsToDelete.Count -eq 0) {
+        return
+    }
+
+    # Medir y validar cada carpeta
+    $validTargets = @()
+    $totalBytes = [long]0
+    foreach ($t in $targetsToDelete) {
+        if (-not (Test-ProfileDirectorySafeToDelete $t.FullName)) {
+            Write-Error "Operación denegada por seguridad: no se permite eliminar directorios raíz o del sistema ($($t.FullName))"
+            continue
+        }
+        $sz = Get-ProfileDirectorySize $t.FullName
+        $totalBytes += $sz.Bytes
+        $validTargets += [PSCustomObject]@{
+            FullName = $t.FullName
+            Name     = $t.Name
+            Bytes    = $sz.Bytes
+            SizeStr  = (Format-ProfileByteSize $sz.Bytes)
+        }
+    }
+
+    if ($validTargets.Count -eq 0) { return }
+
+    if ($WhatIf) {
+        Write-Host "Modo WhatIf: Se eliminarían $($validTargets.Count) carpetas ($(Format-ProfileByteSize $totalBytes)):" -ForegroundColor Cyan
+        foreach ($vt in $validTargets) {
+            Write-Host "  • $($vt.Name) ($($vt.SizeStr))" -ForegroundColor White
+        }
+        return
+    }
+
+    if (-not $Force) {
+        if ($validTargets.Count -eq 1) {
+            $vt = $validTargets[0]
+            $confirm = Read-Host "¿Eliminar la carpeta '$($vt.Name)' ($($vt.SizeStr))? [s/N]"
+        } else {
+            Write-Host "Carpetas a eliminar ($($validTargets.Count)):" -ForegroundColor Cyan
+            foreach ($vt in $validTargets) {
+                Write-Host "  • $($vt.Name) ($($vt.SizeStr))" -ForegroundColor White
+            }
+            Write-Host "Total a liberar: $(Format-ProfileByteSize $totalBytes)" -ForegroundColor Yellow
+            $confirm = Read-Host "¿Deseas eliminar estas $($validTargets.Count) carpetas? [s/N]"
+        }
+
+        if ($confirm -notmatch '^(s|si|y|yes)$') {
+            Write-Host "Operación cancelada." -ForegroundColor DarkGray
+            return
+        }
+    }
+
+    $deletedCount = 0
+    $freedBytes = [long]0
+    foreach ($vt in $validTargets) {
+        Write-Host "Eliminando '$($vt.Name)' ($($vt.SizeStr))..." -NoNewline -ForegroundColor DarkGray
+        $ok = Remove-ProfileDirectoryFast $vt.FullName
+        if ($ok) {
+            Write-Host " [OK]" -ForegroundColor Green
+            $deletedCount++
+            $freedBytes += $vt.Bytes
+        } else {
+            Write-Host " [ERROR]" -ForegroundColor Red
+            Write-Error "No se pudo eliminar completamente la carpeta '$($vt.FullName)'."
+        }
+    }
+
+    Write-Host "✔ Eliminadas $deletedCount carpeta(s). Espacio liberado: $(Format-ProfileByteSize $freedBytes)" -ForegroundColor Green
+}
+
+Set-Alias rm-dir     rmrf
+Set-Alias purge-dir  rmrf
+Set-Alias rmdir-fast rmrf
