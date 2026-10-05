@@ -1139,28 +1139,89 @@ Set-Alias list-tags ltags
 function ngit {
     <#
     .SYNOPSIS
-        Inserta en la nota diaria los commits realizados hoy en el repositorio Git actual.
+        Inserta en la nota diaria los commits realizados hoy en el repositorio actual o en todos los repositorios.
+    .DESCRIPTION
+        - Sin parámetros: extrae los commits de hoy del repositorio Git actual.
+        - Con 'repos', 'all' o switch -Repos: escanea recursivamente todos los proyectos en Documentos\Proyectos y extrae los commits de todos los repositorios con actividad hoy.
+        - Con <nombre>: busca un repositorio específico en Documentos\Proyectos y extrae sus commits sin necesidad de cambiar de carpeta.
     .EXAMPLE
         ngit
+        ngit repos
+        ngit -Repos
+        ngit rsga
     #>
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Position = 0)]
+        [string]$Target,
 
-    $gitCheck = git rev-parse --is-inside-work-tree 2>$null
-    if ($gitCheck -ne 'true') {
-        Write-Warning "El directorio actual no es un repositorio Git."
-        return
+        [Alias('All')]
+        [switch]$Repos
+    )
+
+    $isAllRepos = ($Repos -or ($Target -and $Target -in @('repos', 'all', 'proyectos', '-repos', '-all')))
+    $targetRepos = @()
+
+    if ($isAllRepos) {
+        Write-Host "🔍 Escaneando repositorios en busca de commits realizados hoy..." -ForegroundColor DarkCyan
+        $discovered = @()
+        if (Get-Command Get-ProfileGitRepositories -ErrorAction SilentlyContinue) {
+            $discovered = @(Get-ProfileGitRepositories)
+        } else {
+            $projDir = if ($global:ProjectsRoot) { $global:ProjectsRoot } else { "Documentos\Proyectos" }
+            if (Test-Path -LiteralPath $projDir) {
+                $discovered = @(Get-ChildItem -Path $projDir -Directory -Recurse -Depth 3 | Where-Object { Test-Path (Join-Path $_.FullName ".git") })
+            }
+        }
+
+        # Incluir también el repositorio actual si estamos en uno y no está ya en la lista
+        $gitCheck = git rev-parse --is-inside-work-tree 2>$null
+        if ($gitCheck -eq 'true') {
+            $currentTop = (git rev-parse --show-toplevel 2>$null)
+            if ($currentTop) {
+                $alreadyIn = $discovered | Where-Object { $_.FullName -eq $currentTop }
+                if (-not $alreadyIn) {
+                    $discovered += [System.IO.DirectoryInfo]::new($currentTop)
+                }
+            }
+        }
+
+        if ($discovered.Count -eq 0) {
+            Write-Warning "No se encontraron repositorios Git en '$global:ProjectsRoot'."
+            return
+        }
+
+        $targetRepos = $discovered
     }
-
-    $repoName = Split-Path (git rev-parse --show-toplevel 2>$null) -Leaf
-    $commits = git log --since="midnight" --format="format:- [%h] %s" 2>$null
-
-    if (-not $commits -or [string]::IsNullOrWhiteSpace(($commits -join ""))) {
-        Write-Host "● No hay commits registrados hoy en '$repoName'." -ForegroundColor Yellow
-        return
+    elseif ($Target) {
+        # Buscar repositorio específico por nombre aproximado
+        $discovered = @()
+        if (Get-Command Get-ProfileGitRepositories -ErrorAction SilentlyContinue) {
+            $discovered = @(Get-ProfileGitRepositories)
+        }
+        $match = $discovered | Where-Object { $_.Name -like "*$Target*" -or $_.FullName -like "*$Target*" } | Select-Object -First 1
+        if (-not $match) {
+            Write-Error "No se encontró ningún repositorio Git que coincida con '$Target'."
+            return
+        }
+        $targetRepos = @($match)
+    }
+    else {
+        # Repositorio actual
+        $gitCheck = git rev-parse --is-inside-work-tree 2>$null
+        if ($gitCheck -ne 'true') {
+            Write-Warning "El directorio actual no es un repositorio Git.`nTip: Usa 'ngit repos' para escanear automáticamente todos tus proyectos."
+            return
+        }
+        $topLevel = git rev-parse --show-toplevel 2>$null
+        $targetRepos = @([System.IO.DirectoryInfo]::new($topLevel))
     }
 
     $notesDir = $global:NotesDir
+    if (-not (Test-Path -LiteralPath $notesDir)) {
+        New-Item -ItemType Directory -Path $notesDir -Force | Out-Null
+    }
+
     $todayStr = Get-Date -Format 'yyyyMMdd'
     $todayFile = Join-Path $notesDir "$todayStr.md"
 
@@ -1170,22 +1231,77 @@ function ngit {
     }
 
     $timeStr = Get-Date -Format 'HH:mm'
-    $commitList = if ($commits -is [array]) { $commits } else { @($commits) }
+    $collectedBlocks = @()
+    $totalCommits = 0
+    $activeRepoCount = 0
 
-    $linesToAppend = @(
-        "",
-        "### 🔨 Commits en $repoName [$timeStr]:"
-    ) + $commitList + @("")
+    foreach ($repo in $targetRepos) {
+        $repoPath = $repo.FullName
+        $repoName = $repo.Name
 
-    $crlfBlock = ($linesToAppend -join "`r`n") + "`r`n"
-    [System.IO.File]::AppendAllText($todayFile, $crlfBlock, [System.Text.Encoding]::UTF8)
+        $commitsRaw = git -C "$repoPath" log --since="midnight" --format="format:- [%h] %s" 2>$null
+        if (-not $commitsRaw -or [string]::IsNullOrWhiteSpace(($commitsRaw -join ""))) {
+            if (-not $isAllRepos) {
+                Write-Host "● No hay commits registrados hoy en '$repoName'." -ForegroundColor Yellow
+            }
+            continue
+        }
 
-    Write-Host "✓ $($commitList.Count) commit(s) de '$repoName' añadidos a $todayStr.md:" -ForegroundColor Green
-    foreach ($c in $commitList) {
-        Write-Host "  $c" -ForegroundColor White
+        $commitList = if ($commitsRaw -is [array]) { $commitsRaw } else { @($commitsRaw) }
+        $totalCommits += $commitList.Count
+        $activeRepoCount++
+
+        $linesForRepo = @(
+            "",
+            "### 🔨 Commits en $repoName [$timeStr]:"
+        ) + $commitList + @("")
+
+        $collectedBlocks += ($linesForRepo -join "`r`n") + "`r`n"
+
+        Write-Host "✓ $($commitList.Count) commit(s) en $($repoName):" -ForegroundColor Green
+        foreach ($c in $commitList) {
+            Write-Host "  $c" -ForegroundColor White
+        }
+    }
+
+    if ($collectedBlocks.Count -eq 0) {
+        if ($isAllRepos) {
+            Write-Host "● No se detectaron commits de hoy en ninguno de los $($targetRepos.Count) repositorios escaneados." -ForegroundColor Yellow
+        }
+        return
+    }
+
+    $allCrlf = $collectedBlocks -join ""
+    [System.IO.File]::AppendAllText($todayFile, $allCrlf, [System.Text.Encoding]::UTF8)
+
+    if ($isAllRepos) {
+        Write-Host "`n✓ Total: $totalCommits commit(s) de $activeRepoCount repositorio(s) añadidos a $todayStr.md." -ForegroundColor Green
     }
 }
 Set-Alias note-git ngit
+
+# Autocompletado con Tab para ngit
+if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
+    Register-ArgumentCompleter -CommandName ngit -ParameterName Target -ScriptBlock {
+        param($wordToComplete, $commandAst, $cursorPosition)
+        $candidates = [System.Collections.Generic.List[string]]::new()
+        $candidates.Add('repos')
+        $candidates.Add('all')
+
+        if (Get-Command Get-ProfileGitRepositories -ErrorAction SilentlyContinue) {
+            foreach ($r in (Get-ProfileGitRepositories)) {
+                $candidates.Add($r.Name)
+            }
+        }
+
+        $candidates |
+            Where-Object { $_ -like "$wordToComplete*" } |
+            ForEach-Object {
+                $desc = if ($_ -in @('repos', 'all')) { "Escanear todos los proyectos" } else { "Proyecto Git: $_" }
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $desc)
+            }
+    }
+}
 
 # ------------------------------------------------------------------------------
 # 14. RESUMEN DE TRABAJO & DAILY: standup (alias: note-standup)
