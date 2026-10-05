@@ -37,7 +37,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "jump"; Sintaxis = "jump [nombre]"; Detalle = "Navega a un marcador guardado (alias: j, autocompleta con Tab o menú difuso si fzf)"; Ejemplos = @("jump api", "j logs", "j") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "marks"; Sintaxis = "marks"; Detalle = "Lista todos los marcadores guardados y su estado en disco (alias: lmarks)"; Ejemplos = @("marks", "lmarks") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "unmark"; Sintaxis = "unmark <nombre> [-All] [-Clean]"; Detalle = "Elimina un marcador, todos (-All) o purga rutas inexistentes (-Clean)"; Ejemplos = @("unmark api", "unmark -All", "unmark -Clean") }
-        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "layout-dev"; Sintaxis = "layout-dev [ruta]"; Detalle = "Abre un espacio de trabajo dividido en Windows Terminal (Neovim + Terminal Git + Terminal SQL) (alias: wtd, dev-layout)"; Ejemplos = @("layout-dev", "wtd mi-proyecto") }
+        [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "layout-dev"; Sintaxis = "layout-dev [ruta] [-NewTab] [-NewWindow]"; Detalle = "Abre el espacio de 3 paneles en la pestaña actual (o -NewTab / -NewWindow) (alias: wtd, dev-layout)"; Ejemplos = @("wtd", "wtd mi-proyecto", "wtd -NewTab", "wtd -NewWindow") }
         [PSCustomObject]@{ Categoria = "Navegación & Entorno"; Comando = "split-term"; Sintaxis = "split-term [-V | -H]"; Detalle = "Divide el panel actual de Windows Terminal en la misma carpeta (alias: split-v, split-h)"; Ejemplos = @("split-term", "split-v", "split-h") }
 
         # 1.5. Notas & Diario Developer

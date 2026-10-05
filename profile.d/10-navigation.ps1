@@ -463,15 +463,33 @@ function layout-dev {
     <#
     .SYNOPSIS
         Abre un espacio de trabajo dividido en Windows Terminal (Neovim + Terminal Git + Terminal SQL/Soporte).
+    .DESCRIPTION
+        Por defecto, transforma la pestaña actual de Windows Terminal dividiéndola en 3 paneles:
+        - Izquierda (65% ancho): Neovim en la consola actual.
+        - Arriba derecha (35% ancho, 50% alto): Terminal PowerShell para Git/Builds.
+        - Abajo derecha (35% ancho, 50% alto): Terminal PowerShell para SQL/Soporte/IA.
+
+        Opciones:
+        -NewTab (-t)    : Abre el layout en una nueva pestaña dentro de la misma ventana de Windows Terminal.
+        -NewWindow (-w) : Abre el layout en una ventana independiente separada.
     .EXAMPLE
-        layout-dev
-        layout-dev mi-proyecto
-        wtd
+        layout-dev              # Transforma la pestaña actual en el directorio activo
+        wtd                     # Alias rápido sobre la pestaña actual
+        wtd mi-proyecto         # Abre el layout en el directorio del proyecto
+        wtd -NewTab             # Abre en una nueva pestaña dentro de la misma ventana
+        wtd -t mi-proyecto      # Abre el proyecto en una nueva pestaña
+        wtd -NewWindow          # Abre en una ventana independiente
     #>
     [CmdletBinding()]
     param(
         [Parameter(Position = 0)]
-        [string]$Path
+        [string]$Path,
+
+        [Alias('t', 'tab')]
+        [switch]$NewTab,
+
+        [Alias('w', 'window')]
+        [switch]$NewWindow
     )
 
     if (-not (Get-Command wt -ErrorAction SilentlyContinue)) {
@@ -496,13 +514,46 @@ function layout-dev {
 
     Write-Host "🚀 Iniciando layout dev en: $targetPath" -ForegroundColor Cyan
 
-    $wtArgs = @(
-        "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"nvim .`"",
-        ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe",
-        ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe"
-    )
+    # Caso 1: Ventana independiente separada (-NewWindow / -w)
+    if ($NewWindow) {
+        $wtArgs = @(
+            "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"nvim .`"",
+            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe",
+            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe"
+        )
+        Start-Process wt.exe -ArgumentList $wtArgs
+        return
+    }
 
+    # Caso 2: Nueva pestaña en la MISMA ventana de Windows Terminal (-NewTab / -t)
+    if ($NewTab) {
+        $projName = Split-Path $targetPath -Leaf
+        $wtArgs = @(
+            "-w", "0", "new-tab", "-d", "`"$targetPath`"", "--title", "Dev: $projName", "powershell.exe", "-NoExit", "-Command", "`"nvim .`"",
+            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe",
+            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe"
+        )
+        Start-Process wt.exe -ArgumentList $wtArgs
+        return
+    }
+
+    # Caso 3 (Por defecto): Sobre la PESTAÑA ACTUAL
+    if ((Get-Location).Path -ne $targetPath) {
+        Set-Location -LiteralPath $targetPath
+    }
+
+    $wtArgs = @(
+        "-w", "0", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe",
+        ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe",
+        ";", "move-focus", "left"
+    )
     Start-Process wt.exe -ArgumentList $wtArgs
+
+    Start-Sleep -Milliseconds 250
+
+    if (Get-Command nvim -ErrorAction SilentlyContinue) {
+        nvim .
+    }
 }
 Set-Alias wtd layout-dev
 Set-Alias dev-layout layout-dev
