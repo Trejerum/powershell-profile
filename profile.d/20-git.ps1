@@ -963,3 +963,134 @@ function gconflict {
 Set-Alias vconflict gconflict
 Set-Alias conflicts gconflict
 
+# ==============================================================================
+# INSPECTOR Y VISUALIZADOR DE COMMITS: gshow y vshow
+# ==============================================================================
+function gshow {
+    <#
+    .SYNOPSIS
+        Inspecciona los cambios incluidos en un commit específico (o abre un selector difuso interactivo si no se indica commit).
+    .DESCRIPTION
+        - Sin parámetros: abre un selector difuso interactivo (fzf) con previsualización del diff en vivo en pantalla dividida (o muestra HEAD si fzf no está instalado).
+        - Con <commit>: muestra autor, fecha, mensaje y diff completo del commit indicado.
+        - Con -Stat: muestra únicamente la lista de archivos modificados y líneas alteradas (+/-).
+        - Con -Files / -NameOnly: muestra únicamente las rutas de los archivos tocados en el commit.
+        - Con -Nvim / -v: abre el commit directamente en Neovim con resaltado de sintaxis diff y plegado de código.
+    .EXAMPLE
+        gshow
+        gshow 447686c
+        gshow HEAD~1 -Stat
+        gshow ae887bf -v
+        vshow 447686c
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Commit,
+
+        [switch]$Stat,
+
+        [Alias('NameOnly')]
+        [switch]$Files,
+
+        [Alias('v', 'Open')]
+        [switch]$Nvim
+    )
+
+    $gitCheck = git rev-parse --is-inside-work-tree 2>$null
+    if ($gitCheck -ne 'true') {
+        Write-Warning "El directorio actual no es un repositorio Git."
+        return
+    }
+
+    # Si no se indica commit: selector interactivo fzf con preview en vivo o fallback a HEAD
+    if (-not $Commit) {
+        if (Get-Command fzf -ErrorAction SilentlyContinue) {
+            $selected = git log --oneline --color=always -n 60 2>$null |
+                fzf --ansi --preview "git show --stat --color=always {1}; echo ''; git show --color=always {1}" --preview-window=right:65%:wrap --header="[Enter] Ver en detalle | [ESC] Salir"
+            if (-not $selected) {
+                return
+            }
+            $Commit = ($selected.Trim() -split '\s+')[0]
+        } else {
+            $Commit = "HEAD"
+        }
+    }
+
+    # Validar que el commit o referencia existe
+    $fullHash = git rev-parse --verify --quiet "$Commit^{commit}" 2>$null
+    if (-not $fullHash) {
+        Write-Error "No se encontró el commit o referencia Git: '$Commit'"
+        return
+    }
+
+    # Si se pide abrir en Neovim (-Nvim o alias vshow)
+    if ($Nvim) {
+        $shortHash = $fullHash.Substring(0, 8)
+        $tempFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "commit_$shortHash.diff")
+        try {
+            $diffText = git show --stat -p $fullHash 2>$null
+            [System.IO.File]::WriteAllText($tempFile, ($diffText -join "`r`n"), [System.Text.Encoding]::UTF8)
+            nvim -R -c "setfiletype git" $tempFile
+        }
+        finally {
+            if (Test-Path -LiteralPath $tempFile) {
+                Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+        return
+    }
+
+    # Solo nombres de archivo
+    if ($Files) {
+        git show --name-only --format="" $fullHash 2>$null | Where-Object { $_ }
+        return
+    }
+
+    # Solo estadísticas de archivos
+    if ($Stat) {
+        git show --stat --color=always $fullHash
+        return
+    }
+
+    # Vista completa con pager nativo de Git
+    git show --color=always $fullHash
+}
+Set-Alias git-show gshow
+
+# vshow: abre el commit directamente en Neovim
+function vshow {
+    <#
+    .SYNOPSIS
+        Abre el diff y contenido completo de un commit directamente en Neovim (alias directo de gshow -Nvim).
+    .EXAMPLE
+        vshow
+        vshow 447686c
+        vshow HEAD~1
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Commit
+    )
+
+    gshow -Commit $Commit -Nvim
+}
+
+# Autocompletado de commits para gshow y vshow
+if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
+    Register-ArgumentCompleter -CommandName gshow,vshow,git-show -ParameterName Commit -ScriptBlock {
+        param($wordToComplete, $commandAst, $cursorPosition)
+        $commits = git log --format="format:%h|%s" -n 25 2>$null
+        foreach ($c in $commits) {
+            $parts = $c -split '\|', 2
+            $h = $parts[0]
+            $msg = $parts[1]
+            if ($h -like "$wordToComplete*") {
+                [System.Management.Automation.CompletionResult]::new($h, $h, 'ParameterValue', "$($h): $msg")
+            }
+        }
+    }
+}
+
+
