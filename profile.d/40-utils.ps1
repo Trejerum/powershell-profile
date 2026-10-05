@@ -636,3 +636,96 @@ function profile-bench {
 }
 Set-Alias pbench profile-bench
 Set-Alias profile-time profile-bench
+
+# ==============================================================================
+# DIFERENCIA VISUAL CON PORTAPAPELES: clip-diff (alias: vdiff-clip)
+# ==============================================================================
+function clip-diff {
+    <#
+    .SYNOPSIS
+        Compara un archivo local contra el contenido actual del portapapeles usando Neovim en modo diff.
+    .EXAMPLE
+        clip-diff config.json
+        clip-diff .\script.ps1
+        vdiff-clip query.sql
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Error "No se encontró el archivo: $Path"
+        return
+    }
+
+    $clipText = Get-Clipboard
+    if (-not $clipText -or [string]::IsNullOrWhiteSpace(($clipText -join ""))) {
+        Write-Warning "El portapapeles está vacío o no contiene texto."
+        return
+    }
+
+    $resolved = (Resolve-Path -LiteralPath $Path).ProviderPath
+    $ext = [System.IO.Path]::GetExtension($resolved)
+    $tempFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "clip_diff_$([System.Guid]::NewGuid().ToString('N').Substring(0, 8))$ext")
+
+    try {
+        $clipJoined = if ($clipText -is [array]) { $clipText -join "`r`n" } else { [string]$clipText }
+        [System.IO.File]::WriteAllText($tempFile, $clipJoined, [System.Text.Encoding]::UTF8)
+
+        nvim -d $resolved $tempFile
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempFile) {
+            Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+Set-Alias vdiff-clip clip-diff
+
+# ==============================================================================
+# EJECUCIÓN PERIÓDICA ESTILO UNIX: watch
+# ==============================================================================
+function watch {
+    <#
+    .SYNOPSIS
+        Ejecuta un comando o scriptblock periódicamente cada N segundos refrescando la pantalla (estilo watch de Unix).
+    .EXAMPLE
+        watch "git status -s"
+        watch "ports 8080" -n 5
+        watch "Get-Process node" 1
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Command,
+
+        [Parameter(Position = 1)]
+        [Alias('n')]
+        [int]$Interval = 2
+    )
+
+    if ($Interval -lt 1) { $Interval = 1 }
+
+    try {
+        while ($true) {
+            Clear-Host
+            $nowStr = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+            Write-Host "Cada $($Interval)s: $Command" -NoNewline -ForegroundColor DarkCyan
+            Write-Host "  [$nowStr]  (Ctrl+C para salir)`n" -ForegroundColor DarkGray
+
+            try {
+                Invoke-Expression $Command
+            } catch {
+                Write-Host "Error al ejecutar: $_" -ForegroundColor Red
+            }
+
+            Start-Sleep -Seconds $Interval
+        }
+    } catch [System.Management.Automation.PipelineStoppedException] {
+        # Salida limpia con Ctrl+C
+    }
+}
+Set-Alias watch-cmd watch

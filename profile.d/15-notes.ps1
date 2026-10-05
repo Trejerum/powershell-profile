@@ -785,6 +785,519 @@ function note-roll {
 Set-Alias note-rollover note-roll
 Set-Alias roll-todos note-roll
 
+# ------------------------------------------------------------------------------
+# 9. CAPTURA DE PORTAPAPELES: nclip (alias: note-clip)
+# ------------------------------------------------------------------------------
+function nclip {
+    <#
+    .SYNOPSIS
+        Captura el contenido actual del portapapeles y lo añade a la nota de hoy como bloque de código o texto formateado.
+    .EXAMPLE
+        nclip
+        nclip "Error en wizard de traspasos"
+        nclip "Consulta de saldo" -Lang sql
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Title = "Captura de portapapeles",
+
+        [Parameter(Position = 1)]
+        [string]$Lang = ""
+    )
+
+    $clipText = Get-Clipboard
+    if (-not $clipText -or [string]::IsNullOrWhiteSpace(($clipText -join ""))) {
+        Write-Warning "El portapapeles está vacío o no contiene texto."
+        return
+    }
+
+    $notesDir = $global:NotesDir
+    if (-not (Test-Path -LiteralPath $notesDir)) {
+        New-Item -ItemType Directory -Path $notesDir -Force | Out-Null
+    }
+
+    $todayStr = Get-Date -Format 'yyyyMMdd'
+    $todayFile = Join-Path $notesDir "$todayStr.md"
+
+    if (-not (Test-Path -LiteralPath $todayFile)) {
+        $header = "# $todayStr`r`n`r`n"
+        [System.IO.File]::WriteAllText($todayFile, $header, [System.Text.Encoding]::UTF8)
+    }
+
+    $timeStr = Get-Date -Format 'HH:mm'
+    $clipJoined = if ($clipText -is [array]) { $clipText -join "`r`n" } else { [string]$clipText }
+
+    $codeFence = '```' + $Lang
+    $linesToAppend = @(
+        "",
+        "#### 📋 $Title [$timeStr]",
+        $codeFence,
+        $clipJoined.TrimEnd(),
+        '```',
+        ""
+    )
+
+    $crlfBlock = ($linesToAppend -join "`r`n") + "`r`n"
+    [System.IO.File]::AppendAllText($todayFile, $crlfBlock, [System.Text.Encoding]::UTF8)
+
+    $lineCount = ($clipJoined -split "`r?`n").Count
+    Write-Host "✓ Portapapeles guardado en $todayStr.md ($lineCount líneas): " -ForegroundColor Green -NoNewline
+    Write-Host "$Title [$timeStr]" -ForegroundColor White
+}
+Set-Alias note-clip nclip
+
+# ------------------------------------------------------------------------------
+# 10. NOTAS TEMÁTICAS / PROYECTOS: ntopic (alias: note-topic) y ltopics
+# ------------------------------------------------------------------------------
+function ntopic {
+    <#
+    .SYNOPSIS
+        Gestiona notas por tema o proyecto en Documentos\Notes\topics\<tema>.md.
+    .DESCRIPTION
+        Si se pasa texto, lo añade a la nota temática con timestamp.
+        Si solo se pasa el tema, abre la nota en Neovim.
+    .EXAMPLE
+        ntopic cinfa "Reunión con soporte sobre sincronización"
+        ntopic cinfa
+        ntopic rsga-back
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Topic,
+
+        [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
+        [string[]]$Text
+    )
+
+    $topicsDir = Join-Path $global:NotesDir "topics"
+    if (-not (Test-Path -LiteralPath $topicsDir)) {
+        New-Item -ItemType Directory -Path $topicsDir -Force | Out-Null
+    }
+
+    $cleanTopic = ($Topic -replace '[^\w\-]', '_').Trim('_').ToLowerInvariant()
+    $topicFile = Join-Path $topicsDir "$cleanTopic.md"
+
+    if (-not (Test-Path -LiteralPath $topicFile)) {
+        $header = "# Tema: $cleanTopic`r`n`r`n"
+        [System.IO.File]::WriteAllText($topicFile, $header, [System.Text.Encoding]::UTF8)
+        Write-Host "● Creada nueva nota temática: topics\$cleanTopic.md" -ForegroundColor Cyan
+    }
+
+    if ($Text -and $Text.Count -gt 0) {
+        $body = ($Text -join " ").Trim()
+        $nowStr = Get-Date -Format 'yyyy-MM-dd HH:mm'
+        $entry = "- [$nowStr] $body"
+        [System.IO.File]::AppendAllText($topicFile, "$entry`r`n", [System.Text.Encoding]::UTF8)
+        Write-Host "✓ Apuntado en topics\$cleanTopic.md: " -ForegroundColor Green -NoNewline
+        Write-Host $body -ForegroundColor White
+    } else {
+        nvim $topicFile "+"
+    }
+}
+Set-Alias note-topic ntopic
+
+function ltopics {
+    <#
+    .SYNOPSIS
+        Lista todas las notas temáticas en Documentos\Notes\topics\ con fecha de última modificación y tamaño.
+    .EXAMPLE
+        ltopics
+        ltopics -Open cinfa
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Open
+    )
+
+    $topicsDir = Join-Path $global:NotesDir "topics"
+    if (-not (Test-Path -LiteralPath $topicsDir)) {
+        Write-Host "● No hay notas temáticas creadas todavía en $topicsDir." -ForegroundColor DarkGray
+        return
+    }
+
+    if ($Open) {
+        ntopic $Open
+        return
+    }
+
+    $files = Get-ChildItem -Path $topicsDir -Filter "*.md" | Sort-Object LastWriteTime -Descending
+    if (-not $files -or $files.Count -eq 0) {
+        Write-Host "● No hay notas temáticas creadas todavía." -ForegroundColor DarkGray
+        return
+    }
+
+    Write-Host "`n=== Notas Temáticas ($topicsDir) ===`n" -ForegroundColor DarkCyan
+    $idx = 1
+    foreach ($f in $files) {
+        $nameTag = "[$idx] $($f.BaseName)".PadRight(25)
+        $modDate = $f.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
+        $sizeKB = [Math]::Round($f.Length / 1KB, 1)
+
+        $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
+        $preview = ""
+        foreach ($l in $lines) {
+            $t = $l.Trim()
+            if ($t -and -not $t.StartsWith("#")) {
+                $preview = if ($t.Length -gt 55) { $t.Substring(0, 52) + "..." } else { $t }
+                break
+            }
+        }
+        if (-not $preview) { $preview = "(Sin apuntes adicionales)" }
+
+        Write-Host "  $nameTag" -NoNewline -ForegroundColor Yellow
+        Write-Host "$modDate  " -NoNewline -ForegroundColor DarkGray
+        Write-Host "($([string]$sizeKB + ' KB'))  ".PadRight(12) -NoNewline -ForegroundColor DarkCyan
+        Write-Host "-> $preview" -ForegroundColor White
+
+        $idx++
+    }
+    Write-Host "`nTip: Usa 'ntopic <nombre>' para abrir o añadir contenido a cualquier tema.`n" -ForegroundColor DarkGray
+}
+Set-Alias list-topics ltopics
+
+# Autocompletado con Tab para ntopic
+if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
+    Register-ArgumentCompleter -CommandName ntopic -ParameterName Topic -ScriptBlock {
+        param($wordToComplete, $commandAst, $cursorPosition)
+        $topicsDir = Join-Path $global:NotesDir "topics"
+        if (Test-Path -LiteralPath $topicsDir) {
+            Get-ChildItem -Path $topicsDir -Filter "*.md" |
+                Where-Object { $_.BaseName -like "$wordToComplete*" } |
+                ForEach-Object {
+                    [System.Management.Automation.CompletionResult]::new($_.BaseName, $_.BaseName, 'ParameterValue', "Nota temática: $($_.BaseName)")
+                }
+        }
+    }
+}
+
+# ------------------------------------------------------------------------------
+# 11. PLANTILLA DE REUNIONES: nmeeting (alias: note-meeting)
+# ------------------------------------------------------------------------------
+function nmeeting {
+    <#
+    .SYNOPSIS
+        Inserta una plantilla de reunión estructurada en la nota de hoy o en una nota temática.
+    .EXAMPLE
+        nmeeting "Sincronización sprint 14"
+        nmeeting "Arquitectura nuevo microservicio" -Topic "arquitectura"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Title,
+
+        [Parameter(Position = 1)]
+        [string]$Topic
+    )
+
+    $timeStr = Get-Date -Format 'HH:mm'
+    $todayStr = Get-Date -Format 'yyyyMMdd'
+
+    $targetFile = if ($Topic) {
+        $topicsDir = Join-Path $global:NotesDir "topics"
+        if (-not (Test-Path -LiteralPath $topicsDir)) {
+            New-Item -ItemType Directory -Path $topicsDir -Force | Out-Null
+        }
+        Join-Path $topicsDir "$($Topic.ToLowerInvariant()).md"
+    } else {
+        Join-Path $global:NotesDir "$todayStr.md"
+    }
+
+    if (-not (Test-Path -LiteralPath $targetFile)) {
+        $header = if ($Topic) { "# Tema: $Topic`r`n`r`n" } else { "# $todayStr`r`n`r`n" }
+        [System.IO.File]::WriteAllText($targetFile, $header, [System.Text.Encoding]::UTF8)
+    }
+
+    $template = @(
+        "",
+        "### 📅 Reunión: $Title [$timeStr]",
+        "- **Asistentes:** ",
+        "- **Objetivo / Puntos tratados:**",
+        "  - ",
+        "- **Acuerdos y Próximos pasos:**",
+        "  - [ ] ",
+        ""
+    )
+
+    $crlfBlock = ($template -join "`r`n") + "`r`n"
+    [System.IO.File]::AppendAllText($targetFile, $crlfBlock, [System.Text.Encoding]::UTF8)
+
+    Write-Host "✓ Plantilla de reunión añadida en $(Split-Path $targetFile -Leaf): " -ForegroundColor Green -NoNewline
+    Write-Host "$Title [$timeStr]" -ForegroundColor White
+}
+Set-Alias note-meeting nmeeting
+
+# ------------------------------------------------------------------------------
+# 12. ETIQUETAS Y HASHTAGS: ntag (alias: note-tag) y ltags
+# ------------------------------------------------------------------------------
+function ntag {
+    <#
+    .SYNOPSIS
+        Busca notas que contengan una etiqueta o hashtag específico (#tag).
+    .EXAMPLE
+        ntag bug
+        ntag sql
+        ntag urgente
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Tag
+    )
+
+    $cleanTag = ($Tag.TrimStart('#')).Trim()
+    $pattern = "#$cleanTag\b"
+
+    $notesDir = $global:NotesDir
+    if (-not (Test-Path -LiteralPath $notesDir)) {
+        Write-Warning "No se encuentra el directorio de notas en $notesDir."
+        return
+    }
+
+    Write-Host "🔍 Buscando etiqueta #$cleanTag en notas...`n" -ForegroundColor DarkCyan
+
+    if (Get-Command rg -ErrorAction SilentlyContinue) {
+        & rg -i --heading --line-number --color=always $pattern $notesDir
+    } else {
+        Get-ChildItem -Path $notesDir -Filter "*.md" -Recurse |
+            Select-String -Pattern $pattern |
+            ForEach-Object {
+                $rel = $_.Path.Replace($notesDir, "").TrimStart("\/")
+                Write-Host "${rel}:$($_.LineNumber): " -ForegroundColor Cyan -NoNewline
+                Write-Host $_.Line
+            }
+    }
+}
+Set-Alias note-tag ntag
+
+function ltags {
+    <#
+    .SYNOPSIS
+        Analiza todas las notas y muestra un resumen estadístico de las etiquetas (#hashtags) utilizadas.
+    .EXAMPLE
+        ltags
+    #>
+    [CmdletBinding()]
+    param()
+
+    $notesDir = $global:NotesDir
+    if (-not (Test-Path -LiteralPath $notesDir)) {
+        Write-Warning "No se encuentra el directorio de notas en $notesDir."
+        return
+    }
+
+    $files = Get-ChildItem -Path $notesDir -Filter "*.md" -Recurse
+    $tagCounts = @{}
+    $tagRegex = '#([a-zA-Z0-9_\-]+)'
+
+    foreach ($f in $files) {
+        $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
+        foreach ($line in $lines) {
+            if ($line -match '^\s*#{1,6}\s+') { continue }
+
+            $matches = [regex]::Matches($line, $tagRegex)
+            foreach ($m in $matches) {
+                $t = $m.Groups[1].Value.ToLowerInvariant()
+                if ($t -notmatch '^\d+$') {
+                    if ($tagCounts.ContainsKey($t)) {
+                        $tagCounts[$t]++
+                    } else {
+                        $tagCounts[$t] = 1
+                    }
+                }
+            }
+        }
+    }
+
+    if ($tagCounts.Count -eq 0) {
+        Write-Host "● No se han encontrado etiquetas (#tag) en las notas." -ForegroundColor DarkGray
+        return
+    }
+
+    Write-Host "`n=== Etiquetas (#hashtags) en Notas ($($tagCounts.Count)) ===`n" -ForegroundColor DarkCyan
+
+    $sortedTags = $tagCounts.GetEnumerator() | Sort-Object Value -Descending
+    foreach ($entry in $sortedTags) {
+        $tagCol = "  #$($entry.Key)".PadRight(25)
+        $countCol = "$($entry.Value) mención(es)".PadLeft(14)
+        Write-Host $tagCol -NoNewline -ForegroundColor Yellow
+        Write-Host $countCol -ForegroundColor Cyan
+    }
+    Write-Host "`nTip: Usa 'ntag <etiqueta>' para ver las líneas exactas de cualquier tag.`n" -ForegroundColor DarkGray
+}
+Set-Alias list-tags ltags
+
+# ------------------------------------------------------------------------------
+# 13. ACTIVIDAD GIT DEL DÍA: ngit (alias: note-git)
+# ------------------------------------------------------------------------------
+function ngit {
+    <#
+    .SYNOPSIS
+        Inserta en la nota diaria los commits realizados hoy en el repositorio Git actual.
+    .EXAMPLE
+        ngit
+    #>
+    [CmdletBinding()]
+    param()
+
+    $gitCheck = git rev-parse --is-inside-work-tree 2>$null
+    if ($gitCheck -ne 'true') {
+        Write-Warning "El directorio actual no es un repositorio Git."
+        return
+    }
+
+    $repoName = Split-Path (git rev-parse --show-toplevel 2>$null) -Leaf
+    $commits = git log --since="midnight" --format="format:- [%h] %s" 2>$null
+
+    if (-not $commits -or [string]::IsNullOrWhiteSpace(($commits -join ""))) {
+        Write-Host "● No hay commits registrados hoy en '$repoName'." -ForegroundColor Yellow
+        return
+    }
+
+    $notesDir = $global:NotesDir
+    $todayStr = Get-Date -Format 'yyyyMMdd'
+    $todayFile = Join-Path $notesDir "$todayStr.md"
+
+    if (-not (Test-Path -LiteralPath $todayFile)) {
+        $header = "# $todayStr`r`n`r`n"
+        [System.IO.File]::WriteAllText($todayFile, $header, [System.Text.Encoding]::UTF8)
+    }
+
+    $timeStr = Get-Date -Format 'HH:mm'
+    $commitList = if ($commits -is [array]) { $commits } else { @($commits) }
+
+    $linesToAppend = @(
+        "",
+        "### 🔨 Commits en $repoName [$timeStr]:"
+    ) + $commitList + @("")
+
+    $crlfBlock = ($linesToAppend -join "`r`n") + "`r`n"
+    [System.IO.File]::AppendAllText($todayFile, $crlfBlock, [System.Text.Encoding]::UTF8)
+
+    Write-Host "✓ $($commitList.Count) commit(s) de '$repoName' añadidos a $todayStr.md:" -ForegroundColor Green
+    foreach ($c in $commitList) {
+        Write-Host "  $c" -ForegroundColor White
+    }
+}
+Set-Alias note-git ngit
+
+# ------------------------------------------------------------------------------
+# 14. RESUMEN DE TRABAJO & DAILY: standup (alias: note-standup)
+# ------------------------------------------------------------------------------
+function standup {
+    <#
+    .SYNOPSIS
+        Genera un resumen diario (Daily Standup) con lo hecho ayer, lo pendiente hoy y opción de copiar al portapapeles.
+    .EXAMPLE
+        standup
+        standup -Clip
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$Clip
+    )
+
+    $notesDir = $global:NotesDir
+    $todayStr = Get-Date -Format 'yyyyMMdd'
+    $todayFile = Join-Path $notesDir "$todayStr.md"
+
+    # Encontrar la nota anterior relevante (ayer o viernes)
+    $candidateFiles = @(Get-ChildItem -Path $notesDir -Filter "*.md" |
+                        Where-Object { $_.BaseName -match '^\d{8}$' -and $_.BaseName -lt $todayStr } |
+                        Sort-Object Name -Descending)
+
+    $doneYesterday = @()
+    $prevDateStr = ""
+    if ($candidateFiles.Count -gt 0) {
+        $prevFile = $candidateFiles[0]
+        $prevDateStr = $prevFile.BaseName
+        $prevLines = [System.IO.File]::ReadAllLines($prevFile.FullName, [System.Text.Encoding]::UTF8)
+        foreach ($l in $prevLines) {
+            if ($l -match '^\s*[-*]\s*\[[xX]\]\s*(.*)$') {
+                $doneYesterday += $matches[1].Trim()
+            }
+        }
+    }
+
+    # Tareas pendientes de hoy
+    $pendingToday = @()
+    if (Test-Path -LiteralPath $todayFile) {
+        $todayLines = [System.IO.File]::ReadAllLines($todayFile, [System.Text.Encoding]::UTF8)
+        foreach ($l in $todayLines) {
+            if ($l -match '^\s*[-*]\s*\[ \]\s*(.*)$') {
+                $pendingToday += $matches[1].Trim()
+            }
+        }
+    }
+
+    # Si no hay pendientes en hoy, comprobar si hay pendientes de la nota anterior
+    if ($pendingToday.Count -eq 0 -and $candidateFiles.Count -gt 0) {
+        $prevLines = [System.IO.File]::ReadAllLines($candidateFiles[0].FullName, [System.Text.Encoding]::UTF8)
+        foreach ($l in $prevLines) {
+            if ($l -match '^\s*[-*]\s*\[ \]\s*(.*)$') {
+                $pendingToday += $matches[1].Trim()
+            }
+        }
+    }
+
+    $reportLines = @()
+    $reportLines += "## 🎙️ Daily Standup - $(Get-Date -Format 'yyyy-MM-dd')"
+    $reportLines += ""
+    $reportLines += "### ✅ Ayer $(if ($prevDateStr) { "($prevDateStr)" }):"
+    if ($doneYesterday.Count -gt 0) {
+        foreach ($d in $doneYesterday) {
+            $reportLines += "- $d"
+        }
+    } else {
+        $reportLines += "- (Sin tareas marcadas como completadas)"
+    }
+
+    $reportLines += ""
+    $reportLines += "### 🎯 Hoy:"
+    if ($pendingToday.Count -gt 0) {
+        foreach ($p in $pendingToday) {
+            $reportLines += "- $p"
+        }
+    } else {
+        $reportLines += "- Continuar tareas en curso / backlog"
+    }
+
+    $reportLines += ""
+    $reportLines += "### 🚧 Bloqueos / Impedimentos:"
+    $reportLines += "- Ninguno"
+
+    $reportText = $reportLines -join "`r`n"
+
+    Write-Host "`n┌─ 🎙️ Daily Standup ────────────────────────────────────────┐" -ForegroundColor DarkCyan
+    foreach ($line in $reportLines) {
+        if ($line.StartsWith("## ")) {
+            Write-Host "  $line" -ForegroundColor Yellow
+        } elseif ($line.StartsWith("### ")) {
+            Write-Host "  $line" -ForegroundColor Cyan
+        } elseif ($line.StartsWith("- ")) {
+            Write-Host "    $line" -ForegroundColor White
+        } else {
+            Write-Host ""
+        }
+    }
+    Write-Host "└───────────────────────────────────────────────────────────┘`n" -ForegroundColor DarkCyan
+
+    if ($Clip) {
+        Set-Clipboard -Value $reportText
+        Write-Host "✓ Resumen copiado al portapapeles listo para Teams o Slack." -ForegroundColor Green
+    } else {
+        Write-Host "Tip: Usa 'standup -Clip' para copiarlo directamente al portapapeles.`n" -ForegroundColor DarkGray
+    }
+}
+Set-Alias note-standup standup
+
+
 
 
 
