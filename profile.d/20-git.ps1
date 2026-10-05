@@ -1093,4 +1093,169 @@ if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
     }
 }
 
+# ==============================================================================
+# BUSCADOR DE COMMITS EN TODO EL HISTORIAL: gfind / gsearch
+# ==============================================================================
+function gfind {
+    <#
+    .SYNOPSIS
+        Busca commits en todo el historial de Git (en todas las ramas) por número de ticket, texto del mensaje o cambios en el código.
+    .DESCRIPTION
+        - Con <Query>: busca coincidencias en los mensajes de commit de todas las ramas (--all --grep -i).
+        - Sin <Query>: si fzf está disponible, abre un explorador interactivo difuso con preview en vivo del diff. Si no, solicita el texto a buscar.
+        - Con -Code (-S, -Diff): busca dentro del contenido del código o diffs (pickaxe: qué commit añadió o eliminó ese texto).
+        - Con -Stat: muestra estadísticas de archivos modificados (+/-).
+        - Con -Files / -NameOnly: muestra las rutas de los archivos modificados.
+        - Con -v / -Nvim: abre el commit directamente en Neovim (si hay varios, permite seleccionar con fzf).
+        - Con -Interactive / -fzf: abre el selector fzf con vista previa interactiva del diff en tiempo real.
+    .EXAMPLE
+        gfind 181865
+        gfind "NUMEROS DE SERIE"
+        gfind 181865 -Stat
+        gfind 181865 -v
+        gfind "MiClase" -Code
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$Query,
+
+        [Alias('S', 'Diff')]
+        [switch]$Code,
+
+        [switch]$Stat,
+
+        [Alias('NameOnly')]
+        [switch]$Files,
+
+        [Alias('v', 'Open')]
+        [switch]$Nvim,
+
+        [Alias('i', 'fzf')]
+        [switch]$Interactive
+    )
+
+    $gitCheck = git rev-parse --is-inside-work-tree 2>$null
+    if ($gitCheck -ne 'true') {
+        Write-Warning "El directorio actual no es un repositorio Git."
+        return
+    }
+
+    # Si no se indica Query: explorador interactivo fzf en todo el historial o solicitar texto
+    if (-not $Query) {
+        if (Get-Command fzf -ErrorAction SilentlyContinue) {
+            $selected = git log --all --oneline --color=always -n 250 2>$null |
+                fzf --ansi --preview "git show --stat --color=always {1}; echo ''; git show --color=always {1}" --preview-window=right:65%:wrap --header="[Enter] Ver en detalle | [ESC] Salir | Escribe para filtrar"
+            if (-not $selected) {
+                return
+            }
+            $hash = ($selected.Trim() -split '\s+')[0]
+            if ($Nvim) {
+                vshow $hash
+            } else {
+                gshow $hash
+            }
+            return
+        } else {
+            $Query = Read-Host "Introduce número de ticket o texto a buscar en Git"
+            if (-not $Query) { return }
+        }
+    }
+
+    # Obtener hashes coincidentes en todas las ramas
+    $matchingHashes = if ($Code) {
+        @(git log --all -S "$Query" --format="%h" 2>$null)
+    } else {
+        @(git log --all -i "--grep=$Query" --format="%h" 2>$null)
+    }
+
+    if ($matchingHashes.Count -eq 0) {
+        Write-Host "● No se encontraron commits con '$Query' $(if ($Code) { "en el código" } else { "en los mensajes" }) (buscado en todas las ramas)." -ForegroundColor Yellow
+        if (-not $Code) {
+            Write-Host "Tip: Si el texto está dentro de los archivos modificados, prueba con: gfind '$Query' -Code" -ForegroundColor DarkGray
+        }
+        return
+    }
+
+    # Abrir directamente en Neovim (-v / -Nvim)
+    if ($Nvim) {
+        if ($matchingHashes.Count -eq 1) {
+            vshow $matchingHashes[0]
+            return
+        }
+        if (Get-Command fzf -ErrorAction SilentlyContinue) {
+            $logCmd = if ($Code) {
+                git log --all -S "$Query" --oneline --color=always 2>$null
+            } else {
+                git log --all -i "--grep=$Query" --oneline --color=always 2>$null
+            }
+            $selected = $logCmd | fzf --ansi --preview "git show --stat --color=always {1}; echo ''; git show --color=always {1}" --preview-window=right:65%:wrap --header="Selecciona commit para abrir en Neovim"
+            if ($selected) {
+                $h = ($selected.Trim() -split '\s+')[0]
+                vshow $h
+            }
+            return
+        } else {
+            Write-Host "Se encontraron $($matchingHashes.Count) commits. Abriendo el más reciente ($($matchingHashes[0])) en Neovim..." -ForegroundColor Cyan
+            vshow $matchingHashes[0]
+            return
+        }
+    }
+
+    # Modo interactivo fzf (-Interactive / -fzf)
+    if ($Interactive) {
+        if (Get-Command fzf -ErrorAction SilentlyContinue) {
+            $logCmd = if ($Code) {
+                git log --all -S "$Query" --oneline --color=always 2>$null
+            } else {
+                git log --all -i "--grep=$Query" --oneline --color=always 2>$null
+            }
+            $selected = $logCmd | fzf --ansi --preview "git show --stat --color=always {1}; echo ''; git show --color=always {1}" --preview-window=right:65%:wrap --header="[Enter] Ver en detalle | [ESC] Salir"
+            if ($selected) {
+                $hash = ($selected.Trim() -split '\s+')[0]
+                gshow $hash
+            }
+            return
+        }
+    }
+
+    # Solo nombres de archivo modificados
+    if ($Files) {
+        if ($Code) {
+            git log --all -S "$Query" --name-only --format="%C(yellow)commit %h%C(reset) %s" --color=always
+        } else {
+            git log --all -i "--grep=$Query" --name-only --format="%C(yellow)commit %h%C(reset) %s" --color=always
+        }
+        return
+    }
+
+    # Estadísticas de líneas (+/-) y archivos
+    if ($Stat) {
+        if ($Code) {
+            git log --all -S "$Query" --stat --color=always
+        } else {
+            git log --all -i "--grep=$Query" --stat --color=always
+        }
+        return
+    }
+
+    # Salida por defecto en consola: lista formateada y coloreada
+    Write-Host "`n┌─ Commits encontrados para " -NoNewline -ForegroundColor Cyan
+    Write-Host "'$Query'" -NoNewline -ForegroundColor Yellow
+    Write-Host " ($(if ($Code) { "en código" } else { "en mensajes" }) - todas las ramas) ─┐" -ForegroundColor Cyan
+
+    if ($Code) {
+        git log --all -S "$Query" --color=always --format="%C(auto)%h%d %C(yellow)%ad %C(green)%an%C(reset) %s" --date=short
+    } else {
+        git log --all -i "--grep=$Query" --color=always --format="%C(auto)%h%d %C(yellow)%ad %C(green)%an%C(reset) %s" --date=short
+    }
+
+    Write-Host "└──────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+    Write-Host "Tip: Usa 'gshow <hash>' para ver cambios detallados o 'vshow <hash>' para abrir en Neovim.`n" -ForegroundColor DarkGray
+}
+
+Set-Alias gsearch    gfind
+Set-Alias git-find   gfind
+Set-Alias git-search gfind
+
 
