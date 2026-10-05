@@ -512,14 +512,16 @@ function layout-dev {
         (Get-Location).Path
     }
 
-    Write-Host "🚀 Iniciando layout dev en: $targetPath" -ForegroundColor Cyan
+    $folderName = Split-Path $targetPath -Leaf
+
+    Write-Host "🚀 Iniciando layout dev en: $targetPath ($folderName)" -ForegroundColor Cyan
 
     # Caso 1: Ventana independiente separada (-NewWindow / -w)
     if ($NewWindow) {
         $wtArgs = @(
-            "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"nvim .`"",
-            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe",
-            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe"
+            "--title", "`"$folderName`"", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'; nvim .`"",
+            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
+            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`""
         )
         Start-Process wt.exe -ArgumentList $wtArgs
         return
@@ -527,11 +529,10 @@ function layout-dev {
 
     # Caso 2: Nueva pestaña en la MISMA ventana de Windows Terminal (-NewTab / -t)
     if ($NewTab) {
-        $projName = Split-Path $targetPath -Leaf
         $wtArgs = @(
-            "-w", "0", "new-tab", "-d", "`"$targetPath`"", "--title", "Dev: $projName", "powershell.exe", "-NoExit", "-Command", "`"nvim .`"",
-            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe",
-            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe"
+            "-w", "0", "new-tab", "-d", "`"$targetPath`"", "--title", "`"$folderName`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'; nvim .`"",
+            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
+            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`""
         )
         Start-Process wt.exe -ArgumentList $wtArgs
         return
@@ -542,9 +543,13 @@ function layout-dev {
         Set-Location -LiteralPath $targetPath
     }
 
+    # Configurar el título de la pestaña actual al nombre del directorio
+    $Host.UI.RawUI.WindowTitle = $folderName
+    [Console]::Write("$([char]27)]0;$folderName$([char]7)")
+
     $wtArgs = @(
-        "-w", "0", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe",
-        ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe",
+        "-w", "0", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
+        ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
         ";", "move-focus", "left"
     )
     Start-Process wt.exe -ArgumentList $wtArgs
