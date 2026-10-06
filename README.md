@@ -1,4 +1,4 @@
-﻿# PowerShell Profile & Centro de Mando Developer
+# PowerShell Profile & Centro de Mando Developer
 
 Configuración avanzada para Windows PowerShell 5.1 (`Microsoft.PowerShell_profile.ps1`). Convierte la consola en un centro de mando integral que aúna la velocidad del paso de objetos en .NET con la agilidad de los flujos de trabajo Unix, integrando **Git**, **Lazygit**, **Neovim**, **Ripgrep**, **SQL Server** y herramientas de diagnóstico de sistema y red.
 
@@ -13,6 +13,8 @@ El perfil detecta automáticamente las herramientas instaladas y activa sus acel
 | **`posh-git`** | Estado del repo en el prompt (`[rama +A ~M -D !U]`) y autocompletado nativo con `<Tab>`. |
 | **`PSReadLine 2.2+`** | Autocompletado predictivo inteligente (ghost-text desde historial), menú <kbd>F2</kbd> y edición visual con Neovim. |
 | **`fzf`** *(Fuzzy Finder)* | Búsqueda difusa interactiva de archivos (`fe`/`vf`), carpetas (`fcd`), historial (`fhist`), ramas (`fco`) y repos (`repos -i`). |
+| **`fd`** *(Find Directory/File)* | Búsqueda de archivos y directorios ultrarrápida que alimenta el motor de `fzf` (`fe`/`fcd`). |
+| **`bat`** *(Cat con syntax highlighting)* | Previsualizador con resaltado de sintaxis y numeración para `fzf` (`fe`) y lectura en consola. |
 | **`Neovim` (`nvim`)** | Editor principal de Git, visor de diffs, visor de tuberías (`v`), quickfix de Ripgrep (`vrg`) y scratchpad SQL (`vsql`). |
 | **`Ripgrep` (`rg`)** | Búsqueda ultrarrápida de archivos (`ff`) y de texto con Quickfix (`vrg`). |
 | **`Lazygit` (`lg`)** | Interfaz TUI completa para Git directamente desde la terminal. |

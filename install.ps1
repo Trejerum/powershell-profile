@@ -115,6 +115,8 @@ $cliTools = @(
     @{ Cmd = "rg";   Name = "Ripgrep"; Winget = "BurntSushi.ripgrep.MSVC" }
     @{ Cmd = "lg";   Name = "Lazygit"; Winget = "jesseduffield.lazygit" }
     @{ Cmd = "fzf";  Name = "FZF (Fuzzy Finder)"; Winget = "junegunn.fzf" }
+    @{ Cmd = "fd";   Name = "fd (File Finder)"; Winget = "sharkdp.fd" }
+    @{ Cmd = "bat";  Name = "bat (Cat con syntax highlight)"; Winget = "sharkdp.bat" }
     @{ Cmd = "7z";   Name = "7-Zip";   Winget = "7zip.7zip" }
 )
 

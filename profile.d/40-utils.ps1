@@ -487,12 +487,18 @@ function fe {
         return
     }
 
-    $selected = if (Get-Command fd -ErrorAction SilentlyContinue) {
-        fd --type f --hidden --exclude .git . $Path | fzf --preview "head -n 40 {}" --header="[Enter] Abrir en Neovim | [ESC] Salir"
-    } elseif (Get-Command rg -ErrorAction SilentlyContinue) {
-        rg --files $Path 2>$null | fzf --preview "head -n 40 {}" --header="[Enter] Abrir en Neovim | [ESC] Salir"
+    $previewCmd = if (Get-Command bat -ErrorAction SilentlyContinue) {
+        "bat --style=numbers --color=always --line-range :50 {}"
     } else {
-        Get-ChildItem -LiteralPath $Path -File -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName | fzf --header="[Enter] Abrir en Neovim | [ESC] Salir"
+        "more {}"
+    }
+
+    $selected = if (Get-Command fd -ErrorAction SilentlyContinue) {
+        fd --type f --hidden --exclude .git . $Path | fzf --preview $previewCmd --header="[Enter] Abrir en Neovim | [ESC] Salir"
+    } elseif (Get-Command rg -ErrorAction SilentlyContinue) {
+        rg --files $Path 2>$null | fzf --preview $previewCmd --header="[Enter] Abrir en Neovim | [ESC] Salir"
+    } else {
+        Get-ChildItem -LiteralPath $Path -File -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName | fzf --preview $previewCmd --header="[Enter] Abrir en Neovim | [ESC] Salir"
     }
 
     if ($selected) {

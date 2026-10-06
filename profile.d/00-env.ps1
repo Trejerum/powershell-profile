@@ -21,6 +21,14 @@ if ($global:ProfileDir) {
     }
 }
 
+# Configuración de fzf y búsqueda rápida con fd
+if (Get-Command fzf -ErrorAction SilentlyContinue) {
+    $env:FZF_DEFAULT_OPTS = '--height 40% --layout=reverse --border --inline-info'
+    if (Get-Command fd -ErrorAction SilentlyContinue) {
+        $env:FZF_DEFAULT_COMMAND = 'fd --type f --hidden --exclude .git'
+    }
+}
+
 # ==============================================================================
 # INTEGRACIÓN CON PSREADLINE (HISTORIAL & ATAJOS DE CONSOLA)
 # ==============================================================================
