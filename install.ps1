@@ -14,9 +14,8 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "  Instalación y Configuración del Entorno PowerShell" -ForegroundColor Cyan
 Write-Host "==========================================================`n" -ForegroundColor Cyan
 
-# 1. Configurar vinculación de $PROFILE mediante trampolín (Loader Shim)
+# 1. Configurar vinculación de $PROFILE mediante Unión NTFS (Junction)
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-$targetProfileScript = Join-Path $scriptDir "Microsoft.PowerShell_profile.ps1"
 $profilePath = $PROFILE
 
 if ($profilePath) {
@@ -24,50 +23,21 @@ if ($profilePath) {
     $isDirectMatch = ($scriptDir.TrimEnd('\', '/') -ieq $currentProfileDir.TrimEnd('\', '/'))
 
     if (-not $isDirectMatch) {
-        Write-Host "● Comprobando trampolín en `$PROFILE..." -ForegroundColor Cyan
+        Write-Host "● Comprobando vinculación de `$PROFILE con dotfiles..." -ForegroundColor Cyan
 
-        if (-not (Test-Path -LiteralPath $currentProfileDir)) {
-            New-Item -ItemType Directory -Path $currentProfileDir -Force | Out-Null
-        }
+        $item = Get-Item -LiteralPath $currentProfileDir -ErrorAction SilentlyContinue
+        $isJunction = $item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
 
-        $needsShim = $true
-        if (Test-Path -LiteralPath $profilePath) {
-            $existing = Get-Content -LiteralPath $profilePath -Raw -ErrorAction SilentlyContinue
-            if ($existing -and ($existing -match [regex]::Escape($targetProfileScript) -or $existing -match '\.dotfiles\\powershell')) {
-                $needsShim = $false
-                Write-Host "✓ Trampolín en `$PROFILE ya está configurado y apunta a este repositorio." -ForegroundColor Green
-            } else {
-                $backup = "$profilePath.bak"
-                Copy-Item -LiteralPath $profilePath -Destination $backup -Force
-                Write-Host "  (!) Perfil previo en `$PROFILE respaldado en '$backup'." -ForegroundColor Yellow
+        if ($isJunction) {
+            Write-Host "✓ `$PROFILE ya está vinculado a dotfiles mediante Unión NTFS." -ForegroundColor Green
+        } else {
+            if (Test-Path -LiteralPath $currentProfileDir) {
+                $backupDir = "${currentProfileDir}_bak"
+                Move-Item -LiteralPath $currentProfileDir -Destination $backupDir -Force
+                Write-Host "  (!) Carpeta previa respaldada en '$backupDir'." -ForegroundColor Yellow
             }
-        }
-
-        if ($needsShim) {
-            $shimCode = @"
-# ==============================================================================
-# PERFIL DE POWERSHELL (BOOTSTRAP SHIM / LOADER)
-# ==============================================================================
-# Redirige la inicializacion hacia el repositorio local de dotfiles
-# (~/.dotfiles/powershell) para maximo rendimiento de I/O y aislamiento
-# frente a carpetas sincronizadas en la nube (OneDrive).
-# ==============================================================================
-
-`$targetProfile = Join-Path `$HOME ".dotfiles\powershell\Microsoft.PowerShell_profile.ps1"
-if (-not (Test-Path -LiteralPath `$targetProfile)) {
-    `$targetProfile = "$targetProfileScript"
-}
-
-if (Test-Path -LiteralPath `$targetProfile) {
-    . `$targetProfile
-} else {
-    Write-Warning "No se encontro el perfil en '`$targetProfile'. Clona el repositorio en ~/.dotfiles/powershell."
-}
-"@
-            $shimCode = $shimCode.Replace("`r`n", "`n").Replace("`n", "`r`n")
-            [System.IO.File]::WriteAllText($profilePath, $shimCode, [System.Text.Encoding]::UTF8)
-            Write-Host "✓ Trampolín creado con éxito en '$profilePath'." -ForegroundColor Green
-            Write-Host "  -> Apunta a: '$targetProfileScript'" -ForegroundColor DarkGray
+            cmd /c mklink /J "$currentProfileDir" "$scriptDir" | Out-Null
+            Write-Host "✓ Unión NTFS creada con éxito: '$currentProfileDir' -> '$scriptDir'." -ForegroundColor Green
         }
     } else {
         Write-Host "✓ Repositorio ejecutándose directamente desde el directorio nativo de `$PROFILE." -ForegroundColor Green

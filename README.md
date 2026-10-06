@@ -39,7 +39,7 @@ cd "$HOME\.dotfiles\powershell"
 ```
 
 El script [`install.ps1`](install.ps1) se encarga de todo automáticamente:
-- **Configura automáticamente el trampolín (*Loader Shim*) en `$PROFILE`:** Detecta la ubicación oficial de tu perfil en Windows (esté o no redirigido por OneDrive/políticas corporativas) y genera un cargador ultraligero de 10 líneas que salta en 1 ms a `~/.dotfiles/powershell`, respaldando cualquier perfil existente en `.bak`.
+- **Configura automáticamente la Unión NTFS (*Directory Junction*) en `$PROFILE`:** Detecta la ubicación oficial de tu perfil en Windows (esté o no redirigido por OneDrive/políticas corporativas) y genera un enlace de sistema de archivos a nivel de kernel hacia `~/.dotfiles/powershell`, respaldando cualquier perfil existente en `.bak`.
 - Configura TLS 1.2 y el proveedor NuGet.
 - Instala o actualiza los módulos necesarios (`posh-git`, `PSReadLine 2.2+`).
 - Inicializa tu `sql-connections.json` a partir de [`sql-connections.example.json`](sql-connections.example.json) si aún no existe.

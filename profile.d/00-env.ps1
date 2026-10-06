@@ -42,8 +42,8 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
     $psrlModule = Get-Module PSReadLine
     if ($psrlModule -and $psrlModule.Version -ge [Version]'2.2.0') {
         try {
-            Set-PSReadLineOption -PredictionSource History
-            Set-PSReadLineOption -PredictionViewStyle InlineView
+            # Set-PSReadLineOption -PredictionSource History
+            # Set-PSReadLineOption -PredictionViewStyle InlineView
             Set-PSReadLineKeyHandler -Key F2 -Function SwitchPredictionView
         } catch { }
     }
