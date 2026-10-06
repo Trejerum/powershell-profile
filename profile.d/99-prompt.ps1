@@ -27,8 +27,22 @@ function prompt {
     Write-Host "PS " -NoNewline -ForegroundColor DarkCyan
     Write-Host $displayPath -NoNewline -ForegroundColor White
 
-    # 2. Indicador de estado de Git en vivo (posh-git)
-    if (Get-Command Write-VcsStatus -ErrorAction SilentlyContinue) {
+    # 2. Indicador de estado de Git en vivo (posh-git con carga diferida)
+    if (Get-Command Test-GitRepositoryFast -ErrorAction SilentlyContinue) {
+        if (Test-GitRepositoryFast) {
+            if (-not (Get-Command Write-VcsStatus -ErrorAction SilentlyContinue)) {
+                if (Get-Command Ensure-PoshGitLoaded -ErrorAction SilentlyContinue) {
+                    Ensure-PoshGitLoaded
+                }
+            }
+            if (Get-Command Write-VcsStatus -ErrorAction SilentlyContinue) {
+                $gitStatus = Write-VcsStatus
+                if ($gitStatus) {
+                    Write-Host $gitStatus -NoNewline
+                }
+            }
+        }
+    } elseif (Get-Command Write-VcsStatus -ErrorAction SilentlyContinue) {
         $gitStatus = Write-VcsStatus
         if ($gitStatus) {
             Write-Host $gitStatus -NoNewline

@@ -1,29 +1,54 @@
 ﻿# ==============================================================================
-# 3. ATAJOS DE GIT
+# 3. ATAJOS DE GIT & INTEGRACIÓN DIFERIDA (LAZY-LOAD)
 # ==============================================================================
 
-# 1. Alias nativo 'g' para Git (permite que posh-git lo detecte automáticamente para autocompletar)
+# 1. Alias nativo 'g' para Git
 Set-Alias -Name g -Value git -Option AllScope -ErrorAction SilentlyContinue
 
-# 2. Integración con posh-git (autocompletado con Tab y estado de Git)
-if (Get-Module -ListAvailable -Name posh-git) {
-    Import-Module posh-git -ErrorAction SilentlyContinue
+# 2. Carga diferida (lazy-load) de posh-git para acelerar el arranque en frío
+function global:Ensure-PoshGitLoaded {
+    if (-not (Get-Module -Name posh-git)) {
+        if (Get-Module -ListAvailable -Name posh-git) {
+            Import-Module posh-git -ErrorAction SilentlyContinue
+        }
+    }
 }
 
-# 3. Autocompletado de ramas para 'gco' con posh-git
+function global:Test-GitRepositoryFast {
+    param([string]$Path)
+    $dir = if ($Path) { $Path } else { (Get-Location).Path }
+    while ($dir) {
+        $gitDir = [System.IO.Path]::Combine($dir, ".git")
+        if ([System.IO.Directory]::Exists($gitDir) -or [System.IO.File]::Exists($gitDir)) {
+            return $true
+        }
+        $parent = [System.IO.Path]::GetDirectoryName($dir)
+        if (-not $parent -or $parent -eq $dir) { break }
+        $dir = $parent
+    }
+    return $false
+}
+
+# 3. Autocompletado nativo con Tab para git, g y gco (carga posh-git bajo demanda)
 if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
-    Register-ArgumentCompleter -CommandName gco -Native -ScriptBlock {
+    $gitCompleter = {
         param($wordToComplete, $commandAst, $cursorPosition)
+        Ensure-PoshGitLoaded
         if (Get-Command Expand-GitCommand -ErrorAction SilentlyContinue) {
             $padLength = $cursorPosition - $commandAst.Extent.StartOffset
-            $text = $commandAst.ToString().PadRight($padLength, ' ').Substring(0, $padLength)
-            $text = $text -replace '^gco\s*', 'git checkout '
-            $matches = Expand-GitCommand $text
+            $textToComplete = $commandAst.ToString().PadRight($padLength, ' ').Substring(0, $padLength)
+            if ($textToComplete -match '^g\s') {
+                $textToComplete = $textToComplete -replace '^g\s+', 'git '
+            } elseif ($textToComplete -match '^gco\b') {
+                $textToComplete = $textToComplete -replace '^gco\s*', 'git checkout '
+            }
+            $matches = Expand-GitCommand $textToComplete
             foreach ($m in $matches) {
                 [System.Management.Automation.CompletionResult]::new($m, $m, 'ParameterValue', $m)
             }
         }
     }
+    Register-ArgumentCompleter -CommandName git, g, gco -Native -ScriptBlock $gitCompleter
 }
 function gs    { git status -sb $args }
 function gp    { git pull $args }
