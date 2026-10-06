@@ -24,7 +24,8 @@ function prompt {
         $displayPath = "$prefix\…\$leafs"
     }
 
-    Write-Host "PS " -NoNewline -ForegroundColor DarkCyan
+    $psMajor = $PSVersionTable.PSVersion.Major
+    Write-Host "PS$psMajor " -NoNewline -ForegroundColor DarkCyan
     Write-Host $displayPath -NoNewline -ForegroundColor White
 
     # 2. Indicador de estado de Git en vivo (posh-git con carga diferida)
