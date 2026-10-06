@@ -9,7 +9,10 @@ $global:ProjectsRoot = if ($env:PROJECTS_DIR -and (Test-Path -LiteralPath $env:P
     Join-Path $HOME "Documentos\Proyectos"
 }
 
-function profile { Set-Location (Split-Path -Parent $PROFILE) }
+function profile {
+    $target = if ($global:ProfileDir) { $global:ProfileDir } else { Split-Path -Parent $PROFILE }
+    Set-Location -LiteralPath $target
+}
 function notes   { Set-Location (Join-Path $HOME "Documentos\Notes") }
 
 function nvim-config {
@@ -42,7 +45,7 @@ Set-Alias nvimdir nvim-config
 function ep {
     <#
     .SYNOPSIS
-        Abre $PROFILE o un módulo de 'profile.d' en Neovim para editarlo.
+        Abre el archivo principal del perfil o un módulo de 'profile.d' en Neovim para editarlo.
     .EXAMPLE
         ep
         ep sql
@@ -53,23 +56,28 @@ function ep {
         [Parameter(Position = 0)]
         [string]$Module
     )
+    $profDir = if ($global:ProfileDir) { $global:ProfileDir } else { Split-Path -Parent $PROFILE }
     if ($Module) {
         if ($Module -ieq "local") {
-            $localF = Join-Path (Split-Path -Parent $PROFILE) "profile.local.ps1"
+            $localF = Join-Path $profDir "profile.local.ps1"
             if (-not (Test-Path -LiteralPath $localF)) {
                 [System.IO.File]::WriteAllText($localF, "# ==============================================================================`r`n# PERFIL LOCAL PERSONAL`r`n# ==============================================================================`r`n", [System.Text.Encoding]::UTF8)
             }
             nvim $localF
             return
         }
-        $profDir = Split-Path -Parent $PROFILE
         $target = Get-ChildItem -Path "$profDir\profile.d\*$Module*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($target) {
             nvim $target.FullName
             return
         }
     }
-    nvim $PROFILE
+    $mainProfile = Join-Path $profDir "Microsoft.PowerShell_profile.ps1"
+    if (Test-Path -LiteralPath $mainProfile) {
+        nvim $mainProfile
+    } else {
+        nvim $PROFILE
+    }
 }
 
 function en {
