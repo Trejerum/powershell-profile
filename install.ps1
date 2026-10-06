@@ -14,10 +14,70 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "  Instalación y Configuración del Entorno PowerShell" -ForegroundColor Cyan
 Write-Host "==========================================================`n" -ForegroundColor Cyan
 
-# 1. Configurar soporte TLS 1.2 para conexiones seguras con PowerShell Gallery
+# 1. Configurar vinculación de $PROFILE mediante trampolín (Loader Shim)
+$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$targetProfileScript = Join-Path $scriptDir "Microsoft.PowerShell_profile.ps1"
+$profilePath = $PROFILE
+
+if ($profilePath) {
+    $currentProfileDir = Split-Path -Parent $profilePath
+    $isDirectMatch = ($scriptDir.TrimEnd('\', '/') -ieq $currentProfileDir.TrimEnd('\', '/'))
+
+    if (-not $isDirectMatch) {
+        Write-Host "● Comprobando trampolín en `$PROFILE..." -ForegroundColor Cyan
+
+        if (-not (Test-Path -LiteralPath $currentProfileDir)) {
+            New-Item -ItemType Directory -Path $currentProfileDir -Force | Out-Null
+        }
+
+        $needsShim = $true
+        if (Test-Path -LiteralPath $profilePath) {
+            $existing = Get-Content -LiteralPath $profilePath -Raw -ErrorAction SilentlyContinue
+            if ($existing -and ($existing -match [regex]::Escape($targetProfileScript) -or $existing -match '\.dotfiles\\powershell')) {
+                $needsShim = $false
+                Write-Host "✓ Trampolín en `$PROFILE ya está configurado y apunta a este repositorio." -ForegroundColor Green
+            } else {
+                $backup = "$profilePath.bak"
+                Copy-Item -LiteralPath $profilePath -Destination $backup -Force
+                Write-Host "  (!) Perfil previo en `$PROFILE respaldado en '$backup'." -ForegroundColor Yellow
+            }
+        }
+
+        if ($needsShim) {
+            $shimCode = @"
+# ==============================================================================
+# PERFIL DE POWERSHELL (BOOTSTRAP SHIM / LOADER)
+# ==============================================================================
+# Redirige la inicializacion hacia el repositorio local de dotfiles
+# (~/.dotfiles/powershell) para maximo rendimiento de I/O y aislamiento
+# frente a carpetas sincronizadas en la nube (OneDrive).
+# ==============================================================================
+
+`$targetProfile = Join-Path `$HOME ".dotfiles\powershell\Microsoft.PowerShell_profile.ps1"
+if (-not (Test-Path -LiteralPath `$targetProfile)) {
+    `$targetProfile = "$targetProfileScript"
+}
+
+if (Test-Path -LiteralPath `$targetProfile) {
+    . `$targetProfile
+} else {
+    Write-Warning "No se encontro el perfil en '`$targetProfile'. Clona el repositorio en ~/.dotfiles/powershell."
+}
+"@
+            $shimCode = $shimCode.Replace("`r`n", "`n").Replace("`n", "`r`n")
+            [System.IO.File]::WriteAllText($profilePath, $shimCode, [System.Text.Encoding]::UTF8)
+            Write-Host "✓ Trampolín creado con éxito en '$profilePath'." -ForegroundColor Green
+            Write-Host "  -> Apunta a: '$targetProfileScript'" -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "✓ Repositorio ejecutándose directamente desde el directorio nativo de `$PROFILE." -ForegroundColor Green
+    }
+}
+
+# 2. Configurar soporte TLS 1.2 para conexiones seguras con PowerShell Gallery
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# 2. Configurar NuGet PackageProvider si no está instalado
+# 3. Configurar NuGet PackageProvider si no está instalado
 try {
     $nuget = Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue
     if (-not $nuget -or $nuget.Version -lt [Version]"2.8.5.201") {
@@ -29,7 +89,7 @@ catch {
     Write-Warning "No se pudo actualizar NuGet automáticamente: $_"
 }
 
-# 3. Instalación de módulos PowerShell necesarios
+# 4. Instalación de módulos PowerShell necesarios
 $requiredModules = @(
     @{ Name = "posh-git";   Description = "Prompt con estado de Git y autocompletado avanzado"; MinVersion = "0.7.0" }
     @{ Name = "PSReadLine"; Description = "Autocompletado predictivo inteligente (versión 2.2+)"; MinVersion = "2.2.6" }
@@ -57,7 +117,7 @@ foreach ($m in $requiredModules) {
     }
 }
 
-# 4. Inicializar configuración de conexiones SQL locales
+# 5. Inicializar configuración de conexiones SQL locales
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $sqlCfg = Join-Path $scriptDir "sql-connections.json"
 $sqlExample = Join-Path $scriptDir "sql-connections.example.json"
@@ -71,7 +131,7 @@ elseif (Test-Path -LiteralPath $sqlCfg) {
     Write-Host "✓ 'sql-connections.json' ya existe en este equipo." -ForegroundColor Green
 }
 
-# 5. Comprobación de herramientas externas recomendadas
+# 6. Comprobación de herramientas externas recomendadas
 Write-Host "`n--- Comprobando herramientas recomendadas del sistema ---" -ForegroundColor DarkGray
 
 $cliTools = @(

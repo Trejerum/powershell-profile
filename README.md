@@ -1,4 +1,4 @@
-# PowerShell Profile & Centro de Mando Developer
+﻿# PowerShell Profile & Centro de Mando Developer
 
 Configuración avanzada para Windows PowerShell 5.1 (`Microsoft.PowerShell_profile.ps1`). Convierte la consola en un centro de mando integral que aúna la velocidad del paso de objetos en .NET con la agilidad de los flujos de trabajo Unix, integrando **Git**, **Lazygit**, **Neovim**, **Ripgrep**, **SQL Server** y herramientas de diagnóstico de sistema y red.
 
@@ -22,25 +22,28 @@ El perfil detecta automáticamente las herramientas instaladas y activa sus acel
 
 ## 📦 Instalación y Puesta a Punto (`install.ps1`)
 
-Para clonar y poner a punto el perfil en cualquier ordenador nuevo sin arrastrar binarios pesados en Git:
+El perfil reside en tu directorio local de **dotfiles** (`$HOME\.dotfiles\powershell`) para garantizar máximo rendimiento de I/O en disco SSD y aislar tu repositorio Git y módulos de carpetas sincronizadas en la nube (**OneDrive**).
+
+Para clonar y poner a punto el entorno en **cualquier ordenador nuevo**:
 
 ```powershell
-# 1. Clonar el repositorio en la carpeta del perfil de PowerShell
-git clone <URL_DEL_REPO> "$HOME\Documents\WindowsPowerShell"
+# 1. Clonar el repositorio en la ruta estándar de dotfiles
+git clone https://github.com/Trejerum/powershell-profile.git "$HOME\.dotfiles\powershell"
 
 # 2. Entrar en el directorio y ejecutar el aprovisionador
-cd "$HOME\Documents\WindowsPowerShell"
+cd "$HOME\.dotfiles\powershell"
 .\install.ps1
 
 # 3. Recargar la consola para activar el perfil
 . $PROFILE
 ```
 
-El script [`install.ps1`](install.ps1):
+El script [`install.ps1`](install.ps1) se encarga de todo automáticamente:
+- **Configura automáticamente el trampolín (*Loader Shim*) en `$PROFILE`:** Detecta la ubicación oficial de tu perfil en Windows (esté o no redirigido por OneDrive/políticas corporativas) y genera un cargador ultraligero de 10 líneas que salta en 1 ms a `~/.dotfiles/powershell`, respaldando cualquier perfil existente en `.bak`.
 - Configura TLS 1.2 y el proveedor NuGet.
-- Instala el módulo oficial `posh-git` desde la **PowerShell Gallery** (`PSGallery`).
+- Instala o actualiza los módulos necesarios (`posh-git`, `PSReadLine 2.2+`).
 - Inicializa tu `sql-connections.json` a partir de [`sql-connections.example.json`](sql-connections.example.json) si aún no existe.
-- Comprueba la disponibilidad de Neovim, Ripgrep, Lazygit y 7-Zip, sugiriendo comandos de instalación rápida con `winget`.
+- Comprueba la disponibilidad de herramientas clave (`nvim`, `rg`, `lg`, `fzf`, `7z`), sugiriendo comandos de instalación rápida con `winget`.
 
 ---
 

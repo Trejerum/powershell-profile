@@ -12,6 +12,15 @@ if (Get-Command nvim -ErrorAction SilentlyContinue) {
     $env:GIT_EDITOR = 'nvim'
 }
 
+# Priorizar módulos locales de dotfiles y purgar rutas de OneDrive de PSModulePath
+if ($global:ProfileDir) {
+    $localMods = Join-Path $global:ProfileDir "Modules"
+    if (Test-Path -LiteralPath $localMods) {
+        $cleanPaths = $env:PSModulePath -split ';' | Where-Object { $_ -notmatch 'OneDrive.*WindowsPowerShell\\Modules' -and $_ -ne $localMods }
+        $env:PSModulePath = (($localMods, $cleanPaths) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }) -join ';'
+    }
+}
+
 # ==============================================================================
 # INTEGRACIÓN CON PSREADLINE (HISTORIAL & ATAJOS DE CONSOLA)
 # ==============================================================================
