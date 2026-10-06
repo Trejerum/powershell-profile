@@ -16,8 +16,8 @@ if (Get-Command nvim -ErrorAction SilentlyContinue) {
 if ($global:ProfileDir) {
     $localMods = Join-Path $global:ProfileDir "Modules"
     if (Test-Path -LiteralPath $localMods) {
-        $cleanPaths = $env:PSModulePath -split ';' | Where-Object { $_ -notmatch 'OneDrive.*WindowsPowerShell\\Modules' -and $_ -ne $localMods }
-        $env:PSModulePath = (($localMods, $cleanPaths) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }) -join ';'
+        $cleanPaths = @($env:PSModulePath -split ';' | Where-Object { $_ -and $_ -notmatch 'OneDrive.*WindowsPowerShell\\Modules' -and $_ -ne $localMods -and (Test-Path -LiteralPath $_) })
+        $env:PSModulePath = (@($localMods) + $cleanPaths) -join ';'
     }
 }
 
