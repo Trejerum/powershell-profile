@@ -24,9 +24,70 @@ function Get-SqlProfileDirectory {
         if ($parent -and (Test-Path -LiteralPath $parent)) { return $parent }
     }
     $myDocs = [Environment]::GetFolderPath('MyDocuments')
-    $defaultDir = Join-Path $myDocs "WindowsPowerShell"
-    if (Test-Path -LiteralPath $defaultDir) { return $defaultDir }
+    foreach ($sub in @("PowerShell", "WindowsPowerShell")) {
+        $candidate = Join-Path $myDocs $sub
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
     return (Get-Location).Path
+}
+
+# ==============================================================================
+# FÃBRICA ADO.NET DUAL (.NET Framework / .NET Core)
+# ==============================================================================
+$script:SqlAssemblyLoaded = $false
+
+function Initialize-SqlTypes {
+    if ($script:SqlAssemblyLoaded) { return }
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        $pDir = Get-SqlProfileDirectory
+        $clientDll = Join-Path $pDir "Modules\SqlServer\22.4.5.1\Microsoft.Data.SqlClient.dll"
+        if (Test-Path -LiteralPath $clientDll) {
+            try {
+                Add-Type -Path $clientDll -ErrorAction SilentlyContinue
+                $script:SqlAssemblyLoaded = $true
+            } catch { }
+        }
+    } else {
+        $script:SqlAssemblyLoaded = $true
+    }
+}
+
+function New-SqlConnectionStringBuilder {
+    Initialize-SqlTypes
+    if ($PSVersionTable.PSEdition -eq 'Core' -and ('Microsoft.Data.SqlClient.SqlConnectionStringBuilder' -as [type])) {
+        return [Microsoft.Data.SqlClient.SqlConnectionStringBuilder]::new()
+    }
+    return [System.Data.SqlClient.SqlConnectionStringBuilder]::new()
+}
+
+function New-SqlConnection {
+    param([string]$ConnectionString)
+    Initialize-SqlTypes
+    if ($PSVersionTable.PSEdition -eq 'Core' -and ('Microsoft.Data.SqlClient.SqlConnection' -as [type])) {
+        if ($ConnectionString) {
+            return [Microsoft.Data.SqlClient.SqlConnection]::new($ConnectionString)
+        }
+        return [Microsoft.Data.SqlClient.SqlConnection]::new()
+    }
+    if ($ConnectionString) {
+        return [System.Data.SqlClient.SqlConnection]::new($ConnectionString)
+    }
+    return [System.Data.SqlClient.SqlConnection]::new()
+}
+
+function New-SqlDataAdapter {
+    param($Command)
+    Initialize-SqlTypes
+    if ($PSVersionTable.PSEdition -eq 'Core' -and ('Microsoft.Data.SqlClient.SqlDataAdapter' -as [type])) {
+        if ($Command) {
+            return [Microsoft.Data.SqlClient.SqlDataAdapter]::new($Command)
+        }
+        return [Microsoft.Data.SqlClient.SqlDataAdapter]::new()
+    }
+    if ($Command) {
+        return [System.Data.SqlClient.SqlDataAdapter]::new($Command)
+    }
+    return [System.Data.SqlClient.SqlDataAdapter]::new()
 }
 
 function Load-SqlConnectionsConfig {
@@ -98,7 +159,7 @@ function Get-SqlConnectionString {
     $srv = if ($Server) { $Server } elseif ($pData -and $pData.server) { $pData.server } else { "localhost" }
     $db  = if ($Database) { $Database } elseif ($pData -and $pData.database) { $pData.database } else { "master" }
 
-    $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+    $builder = New-SqlConnectionStringBuilder
     $builder['Data Source'] = $srv
     $builder['Initial Catalog'] = $db
     $builder['Connect Timeout'] = $Timeout
@@ -277,7 +338,7 @@ function sql-ping {
         $connStr = Get-SqlConnectionString -ProfileName $pName -Timeout $Timeout
 
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
+        $conn = New-SqlConnection -ConnectionString $connStr
         $status = "Online"
         $statusText = "✓ En línea"
         $statusColor = "Green"
@@ -359,7 +420,7 @@ function Update-SqlTableCache {
     }
     else {
         $cs = Get-SqlConnectionString -Server $global:SqlDefaultServer -Database $global:SqlDefaultDatabase -Timeout 5
-        $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
+        $conn = New-SqlConnection -ConnectionString $cs
         try {
             $conn.Open()
             $needClose = $true
@@ -383,7 +444,7 @@ ORDER BY TABLE_SCHEMA, TABLE_NAME
 "@
         $cmd.CommandTimeout = 15
 
-        $da = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+        $da = New-SqlDataAdapter -Command $cmd
         $dt = New-Object System.Data.DataTable
         [void]$da.Fill($dt)
 
@@ -483,7 +544,7 @@ function qconnect {
 
     $cs = Get-SqlConnectionString -Server $Server -Database $Database -Timeout 10
     try {
-        $global:SqlSession = New-Object System.Data.SqlClient.SqlConnection($cs)
+        $global:SqlSession = New-SqlConnection -ConnectionString $cs
         $global:SqlSession.Open()
 
         # Prevención de transacciones huérfanas
@@ -560,7 +621,7 @@ Register-ArgumentCompleter -CommandName use -ParameterName Database -ScriptBlock
         }
         else {
             $cs = Get-SqlConnectionString -Server $global:SqlDefaultServer -Database "master" -Timeout 3
-            $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
+            $conn = New-SqlConnection -ConnectionString $cs
             $conn.Open()
             $needClose = $true
         }
@@ -568,7 +629,7 @@ Register-ArgumentCompleter -CommandName use -ParameterName Database -ScriptBlock
         $cmd = $conn.CreateCommand()
         $cmd.CommandText = "SELECT name FROM sys.databases WHERE state = 0 ORDER BY name"
         $cmd.CommandTimeout = 5
-        $da = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+        $da = New-SqlDataAdapter -Command $cmd
         $dt = New-Object System.Data.DataTable
         [void]$da.Fill($dt)
 
@@ -735,7 +796,7 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
             $isTransient = $true
             $cs = Get-SqlConnectionString -Server $global:SqlDefaultServer -Database $global:SqlDefaultDatabase -Timeout 10
             try {
-                $conn = New-Object System.Data.SqlClient.SqlConnection($cs)
+                $conn = New-SqlConnection -ConnectionString $cs
                 $conn.Open()
                 # Prevención de transacciones huérfanas
                 $initCmd = $conn.CreateCommand()
@@ -782,7 +843,7 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                                      ($cleanBatch -match '(?i);\s*SELECT\b')
 
                         if ($isLastBatch -or $hasSelect) {
-                            $da = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+                            $da = New-SqlDataAdapter -Command $cmd
                             [void]$da.Fill($dt)
                         }
                         else {
@@ -813,7 +874,7 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                     if ($fullErr -match '(?i)transport-level|TCP Provider|broken and recovery is not possible|comunicaci[oó]n|10054|10053|10060|semaphore timeout|communication link') {
                         $isNetError = $true
                     }
-                    elseif ($ex -is [System.Data.SqlClient.SqlException]) {
+                    elseif ($ex.GetType().Name -eq 'SqlException') {
                         $netCodes = @(10054, 10053, 233, 64, 121, 10060, 2, 53)
                         foreach ($sqlErr in $ex.Errors) {
                             if ($netCodes -contains $sqlErr.Number) {
@@ -828,7 +889,7 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                         qdisconnect -Quiet
                         try {
                             $cs = Get-SqlConnectionString -Server $savedServer -Database $savedDb -Timeout 10
-                            $global:SqlSession = New-Object System.Data.SqlClient.SqlConnection($cs)
+                            $global:SqlSession = New-SqlConnection -ConnectionString $cs
                             $global:SqlSession.Open()
 
                             $initCmd = $global:SqlSession.CreateCommand()

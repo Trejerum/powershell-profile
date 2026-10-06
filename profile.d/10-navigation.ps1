@@ -467,6 +467,8 @@ if (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue) {
 # ==============================================================================
 # WINDOWS TERMINAL WORKSPACE LAYOUTS
 # ==============================================================================
+$script:CurrentShellExe = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
+
 function layout-dev {
     <#
     .SYNOPSIS
@@ -527,9 +529,9 @@ function layout-dev {
     # Caso 1: Ventana independiente separada (-NewWindow / -w)
     if ($NewWindow) {
         $wtArgs = @(
-            "--title", "`"$folderName`"", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'; nvim .`"",
-            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
-            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`""
+            "--title", "`"$folderName`"", "-d", "`"$targetPath`"", $script:CurrentShellExe, "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'; nvim .`"",
+            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", $script:CurrentShellExe, "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
+            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", $script:CurrentShellExe, "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`""
         )
         Start-Process wt.exe -ArgumentList $wtArgs
         return
@@ -538,9 +540,9 @@ function layout-dev {
     # Caso 2: Nueva pestaña en la MISMA ventana de Windows Terminal (-NewTab / -t)
     if ($NewTab) {
         $wtArgs = @(
-            "-w", "0", "new-tab", "-d", "`"$targetPath`"", "--title", "`"$folderName`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'; nvim .`"",
-            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
-            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`""
+            "-w", "0", "new-tab", "-d", "`"$targetPath`"", "--title", "`"$folderName`"", $script:CurrentShellExe, "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'; nvim .`"",
+            ";", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", $script:CurrentShellExe, "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
+            ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", $script:CurrentShellExe, "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`""
         )
         Start-Process wt.exe -ArgumentList $wtArgs
         return
@@ -556,8 +558,8 @@ function layout-dev {
     [Console]::Write("$([char]27)]0;$folderName$([char]7)")
 
     $wtArgs = @(
-        "-w", "0", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
-        ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", "powershell.exe", "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
+        "-w", "0", "split-pane", "-V", "-s", "0.35", "-d", "`"$targetPath`"", $script:CurrentShellExe, "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
+        ";", "split-pane", "-H", "-s", "0.50", "-d", "`"$targetPath`"", $script:CurrentShellExe, "-NoExit", "-Command", "`"`$Host.UI.RawUI.WindowTitle = '$folderName'`"",
         ";", "move-focus", "left"
     )
     Start-Process wt.exe -ArgumentList $wtArgs
@@ -597,7 +599,7 @@ function split-term {
     $curr = (Get-Location).Path
     $splitFlag = if ($Horizontal) { "-H" } else { "-V" }
 
-    Start-Process wt.exe -ArgumentList @("-w", "0", "split-pane", $splitFlag, "-d", "`"$curr`"", "powershell.exe")
+    Start-Process wt.exe -ArgumentList @("-w", "0", "split-pane", $splitFlag, "-d", "`"$curr`"", $script:CurrentShellExe)
 }
 function split-v { split-term -Vertical }
 function split-h { split-term -Horizontal }

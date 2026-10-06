@@ -620,8 +620,9 @@ function profile-bench {
     }
 
     # Comprobación de arranque frío en subshell
+    $benchShell = if ($PSVersionTable.PSEdition -eq 'Core') { "pwsh.exe" } else { "powershell.exe" }
     $coldSw = [System.Diagnostics.Stopwatch]::StartNew()
-    $subProcess = Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -Command `"`$PROFILE = '$PROFILE'; . '$pDir\Microsoft.PowerShell_profile.ps1'`"" -WindowStyle Hidden -PassThru -Wait
+    $subProcess = Start-Process -FilePath $benchShell -ArgumentList "-NoProfile -Command `"`$PROFILE = '$PROFILE'; . '$pDir\Microsoft.PowerShell_profile.ps1'`"" -WindowStyle Hidden -PassThru -Wait
     $coldSw.Stop()
     $coldMs = [Math]::Round($coldSw.Elapsed.TotalMilliseconds, 0)
 
