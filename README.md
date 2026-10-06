@@ -161,7 +161,7 @@ El perfil automatiza y potencia tu flujo de notas diarias con Neovim, captura r�
   - `gpush`: `git push`.
   - `gpsup` (alias `gpu`): `git push --set-upstream origin <rama_actual>`.
   - `gco <rama>`: `git checkout <rama>` con autocompletado inteligente de ramas (o selector difuso `fco` si se pulsa sin argumentos).
-  - `glog`: Historial compacto gráfico de los últimos 10 commits.
+  - `glog [n]`: Historial compacto gráfico de los últimos 10 commits (o N commits si se indica número, ej. `glog 50`, `glog 25 --all`).
   - `gss [msg]` / `gsl` / `gsp [idx]`: Guardar, listar y aplicar stashes con timestamps y rama activa.
   - `agy-review-pr <rama> [base]` (alias `agy-pr-review`): Auditoría de Pull Requests con Antigravity sin saltar de rama.
 

@@ -88,7 +88,80 @@ function gco {
     }
 }
 function ga   { git add . $args }
-function glog { git log --oneline --graph --decorate -n 10 @args }
+function glog {
+    <#
+    .SYNOPSIS
+        Historial gráfico compacto y coloreado de Git.
+    .DESCRIPTION
+        - Por defecto muestra los últimos 10 commits.
+        - Si se pasa un número (ej. 'glog 50'), muestra esa cantidad de commits (-n 50).
+        - Admite cualquier argumento nativo de git log (ej. 'glog 25 --all', 'glog develop 15', 'glog 30 --stat').
+    .EXAMPLE
+        glog
+        glog 25
+        glog 50 --all
+        glog develop 15
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$FirstArg,
+
+        [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
+        [string[]]$ExtraArgs
+    )
+
+    $gitArgs = [System.Collections.Generic.List[string]]::new()
+    $gitArgs.Add("log")
+    $gitArgs.Add("--oneline")
+    $gitArgs.Add("--graph")
+    $gitArgs.Add("--decorate")
+
+    $limitSet = $false
+
+    # 1. Analizar el primer argumento
+    if ($FirstArg) {
+        if ($FirstArg -match '^\d+$') {
+            $gitArgs.Add("-n")
+            $gitArgs.Add($FirstArg)
+            $limitSet = $true
+        } elseif ($FirstArg -match '^-\d+$') {
+            $gitArgs.Add("-n")
+            $gitArgs.Add($FirstArg.Substring(1))
+            $limitSet = $true
+        } else {
+            $gitArgs.Add($FirstArg)
+            if ($FirstArg -in @('-n', '--max-count')) {
+                $limitSet = $true
+            }
+        }
+    }
+
+    # 2. Analizar argumentos adicionales
+    if ($ExtraArgs) {
+        for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+            $arg = $ExtraArgs[$i]
+            if ($arg -match '^\d+$' -and -not $limitSet) {
+                $gitArgs.Add("-n")
+                $gitArgs.Add($arg)
+                $limitSet = $true
+            } else {
+                $gitArgs.Add($arg)
+                if ($arg -in @('-n', '--max-count')) {
+                    $limitSet = $true
+                }
+            }
+        }
+    }
+
+    # 3. Si no se especificó límite numérico, aplicar el valor predeterminado (10)
+    if (-not $limitSet) {
+        $gitArgs.Add("-n")
+        $gitArgs.Add("10")
+    }
+
+    git @gitArgs
+}
 function gme {
     $me = (git config user.name)
     if (-not $me) { $me = $env:USERNAME }
