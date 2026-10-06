@@ -32,43 +32,14 @@ function Get-SqlProfileDirectory {
 }
 
 # ==============================================================================
-# FÃBRICA ADO.NET DUAL (.NET Framework / .NET Core)
+# FABRICA ADO.NET (Compatible nativamente con PS 5.1 y PS 7)
 # ==============================================================================
-$script:SqlAssemblyLoaded = $false
-
-function Initialize-SqlTypes {
-    if ($script:SqlAssemblyLoaded) { return }
-    if ($PSVersionTable.PSEdition -eq 'Core') {
-        $pDir = Get-SqlProfileDirectory
-        $clientDll = Join-Path $pDir "Modules\SqlServer\22.4.5.1\Microsoft.Data.SqlClient.dll"
-        if (Test-Path -LiteralPath $clientDll) {
-            try {
-                Add-Type -Path $clientDll -ErrorAction SilentlyContinue
-                $script:SqlAssemblyLoaded = $true
-            } catch { }
-        }
-    } else {
-        $script:SqlAssemblyLoaded = $true
-    }
-}
-
 function New-SqlConnectionStringBuilder {
-    Initialize-SqlTypes
-    if ($PSVersionTable.PSEdition -eq 'Core' -and ('Microsoft.Data.SqlClient.SqlConnectionStringBuilder' -as [type])) {
-        return [Microsoft.Data.SqlClient.SqlConnectionStringBuilder]::new()
-    }
     return [System.Data.SqlClient.SqlConnectionStringBuilder]::new()
 }
 
 function New-SqlConnection {
     param([string]$ConnectionString)
-    Initialize-SqlTypes
-    if ($PSVersionTable.PSEdition -eq 'Core' -and ('Microsoft.Data.SqlClient.SqlConnection' -as [type])) {
-        if ($ConnectionString) {
-            return [Microsoft.Data.SqlClient.SqlConnection]::new($ConnectionString)
-        }
-        return [Microsoft.Data.SqlClient.SqlConnection]::new()
-    }
     if ($ConnectionString) {
         return [System.Data.SqlClient.SqlConnection]::new($ConnectionString)
     }
@@ -77,13 +48,6 @@ function New-SqlConnection {
 
 function New-SqlDataAdapter {
     param($Command)
-    Initialize-SqlTypes
-    if ($PSVersionTable.PSEdition -eq 'Core' -and ('Microsoft.Data.SqlClient.SqlDataAdapter' -as [type])) {
-        if ($Command) {
-            return [Microsoft.Data.SqlClient.SqlDataAdapter]::new($Command)
-        }
-        return [Microsoft.Data.SqlClient.SqlDataAdapter]::new()
-    }
     if ($Command) {
         return [System.Data.SqlClient.SqlDataAdapter]::new($Command)
     }
