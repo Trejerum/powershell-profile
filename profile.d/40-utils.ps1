@@ -762,6 +762,55 @@ function Remove-ProfileDirectoryFast {
     return (-not (Test-Path -LiteralPath $TargetDirectory))
 }
 
+function Get-ProfileAllowedDeletionRoots {
+    $roots = [System.Collections.Generic.List[string]]::new()
+
+    if ($global:ProjectsRoot -and (Test-Path -LiteralPath $global:ProjectsRoot)) {
+        $roots.Add([System.IO.Path]::GetFullPath($global:ProjectsRoot).TrimEnd('\', '/'))
+    }
+
+    $candidates = @(
+        (Join-Path $HOME "Documentos\Proyectos"),
+        (Join-Path $HOME "Documents\Proyectos"),
+        (Join-Path $HOME "Documentos\Scratch"),
+        (Join-Path $HOME "Documents\Scratch"),
+        [System.IO.Path]::GetTempPath()
+    )
+
+    if ($env:OneDrive) {
+        $candidates += (Join-Path $env:OneDrive "Documentos\Proyectos")
+        $candidates += (Join-Path $env:OneDrive "Documents\Proyectos")
+        $candidates += (Join-Path $env:OneDrive "Documentos\Scratch")
+    }
+
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path -LiteralPath $c)) {
+            $full = [System.IO.Path]::GetFullPath($c).TrimEnd('\', '/')
+            if (-not $roots.Contains($full)) {
+                $roots.Add($full)
+            }
+        }
+    }
+
+    return $roots
+}
+
+function Test-ProfileDirectoryInAllowedRoot {
+    param([string]$FullPath)
+    if ([string]::IsNullOrWhiteSpace($FullPath)) { return $false }
+
+    $norm = [System.IO.Path]::GetFullPath($FullPath).TrimEnd('\', '/')
+    $allowedRoots = Get-ProfileAllowedDeletionRoots
+
+    foreach ($root in $allowedRoots) {
+        if ($norm -ieq $root -or $norm.StartsWith($root + '\', [System.StringComparison]::OrdinalIgnoreCase) -or $norm.StartsWith($root + '/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Test-ProfileDirectorySafeToDelete {
     param([string]$FullPath)
 
@@ -788,11 +837,26 @@ function Test-ProfileDirectorySafeToDelete {
         if ($norm -ieq $f) { return $false }
     }
 
-    # 3. Directorio actual o padre
+    # 3. No se permite eliminar el directorio actual
     $current = (Get-Location).Path.TrimEnd('\', '/')
     if ($norm -ieq $current) { return $false }
 
-    return $true
+    # 4. RESTRICCIÓN ESTRICTA (LISTA BLANCA): Solo dentro de Documentos\Proyectos, Scratch o Temp
+    $allowedRoots = Get-ProfileAllowedDeletionRoots
+    $isInsideAllowed = $false
+
+    foreach ($root in $allowedRoots) {
+        # NUNCA se permite borrar la propia raíz de Proyectos o Scratch (ej. no borrar C:\...\Documentos\Proyectos)
+        if ($norm -ieq $root) { return $false }
+
+        # Debe ser un subdirectorio estricto dentro de la raíz permitida
+        if ($norm.StartsWith($root + '\', [System.StringComparison]::OrdinalIgnoreCase) -or $norm.StartsWith($root + '/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $isInsideAllowed = $true
+            break
+        }
+    }
+
+    return $isInsideAllowed
 }
 
 function Get-ProfileDirectorySize {
@@ -861,8 +925,13 @@ function rmrf {
     # CASO 1: Búsqueda recursiva (-Find / -Recurse)
     # ---------------------------------------------------------
     if ($Find -and $Find.Count -gt 0) {
-        Write-Host "● Escaneando subdirectorios en busca de: $($Find -join ', ')..." -ForegroundColor DarkCyan
         $currentDir = Get-Item -LiteralPath (Get-Location).Path
+        if (-not (Test-ProfileDirectoryInAllowedRoot $currentDir.FullName)) {
+            Write-Error "Operación denegada por seguridad: 'rmrf -Find' solo puede ejecutarse dentro de 'Documentos\Proyectos' o 'Scratch'. Ubicación actual no permitida: '$($currentDir.FullName)'."
+            return
+        }
+
+        Write-Host "● Escaneando subdirectorios en busca de: $($Find -join ', ')..." -ForegroundColor DarkCyan
         $foundDirs = [System.Collections.Generic.List[System.IO.DirectoryInfo]]::new()
         $queue = [System.Collections.Generic.Queue[System.IO.DirectoryInfo]]::new()
         $queue.Enqueue($currentDir)
@@ -946,6 +1015,12 @@ function rmrf {
     # CASO 2: Sin argumentos -> Selección interactiva con fzf
     # ---------------------------------------------------------
     if (-not $Path -or $Path.Count -eq 0) {
+        $currentDir = (Get-Location).Path
+        if (-not (Test-ProfileDirectoryInAllowedRoot $currentDir)) {
+            Write-Error "Operación denegada por seguridad: 'rmrf' interactivo solo puede ejecutarse dentro de 'Documentos\Proyectos' o 'Scratch'. Ubicación actual no permitida: '$currentDir'."
+            return
+        }
+
         if (Get-Command fzf -ErrorAction SilentlyContinue) {
             $subDirs = Get-ChildItem -Directory | Where-Object { $_.Name -ne '.git' }
             if (-not $subDirs -or $subDirs.Count -eq 0) {
@@ -1018,7 +1093,7 @@ function rmrf {
     $totalBytes = [long]0
     foreach ($t in $targetsToDelete) {
         if (-not (Test-ProfileDirectorySafeToDelete $t.FullName)) {
-            Write-Error "Operación denegada por seguridad: no se permite eliminar directorios raíz o del sistema ($($t.FullName))"
+            Write-Error "Operación denegada por seguridad: 'rmrf' solo tiene permitido eliminar carpetas dentro de 'Documentos\Proyectos' o 'Scratch' ($($t.FullName))."
             continue
         }
         $sz = Get-ProfileDirectorySize $t.FullName
