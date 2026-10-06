@@ -1,0 +1,7 @@
+gui:
+  nerdFontsVersion: ""
+
+os:
+  editPreset: "nvim-remote"
+  edit: "nvim {{filename}}"
+  editAtLine: "nvim +{{line}} {{filename}}"

@@ -107,6 +107,20 @@ elseif (Test-Path -LiteralPath $sqlCfg) {
     Write-Host "✓ 'sql-connections.json' ya existe en este equipo." -ForegroundColor Green
 }
 
+# 5b. Configurar configuraciones compartidas de herramientas (Ripgrep y Lazygit)
+$lgTargetDir = Join-Path $env:APPDATA "lazygit"
+$lgSource = Join-Path $scriptDir "config\lazygit.yml"
+$lgTarget = Join-Path $lgTargetDir "config.yml"
+if (Test-Path -LiteralPath $lgSource) {
+    if (-not (Test-Path -LiteralPath $lgTargetDir)) {
+        [void](New-Item -ItemType Directory -Path $lgTargetDir -Force)
+    }
+    if (-not (Test-Path -LiteralPath $lgTarget)) {
+        Copy-Item -LiteralPath $lgSource -Destination $lgTarget -Force
+        Write-Host "✓ Inicializado archivo de configuración de Lazygit en AppData." -ForegroundColor Green
+    }
+}
+
 # 6. Comprobación de herramientas externas recomendadas
 Write-Host "`n--- Comprobando herramientas recomendadas del sistema ---" -ForegroundColor DarkGray
 

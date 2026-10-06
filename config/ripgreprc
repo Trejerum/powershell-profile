@@ -1,0 +1,21 @@
+# ==============================================================================
+# CONFIGURACIÓN GLOBAL DE RIPGREP (ripgreprc)
+# Compartida entre PowerShell (rg, ff, vrg) y Neovim (Telescope live_grep)
+# ==============================================================================
+
+# Coincidencia inteligente de mayúsculas/minúsculas
+--smart-case
+
+# Buscar en archivos ocultos por defecto, pero excluir el árbol interno de Git
+--hidden
+--glob=!.git/*
+
+# Excluir dependencias y artefactos de compilación (.NET, Angular, Node)
+--glob=!node_modules/*
+--glob=!dist/*
+--glob=!bin/*
+--glob=!obj/*
+--glob=!.vs/*
+--glob=!.idea/*
+--glob=!*.min.js
+--glob=!*.min.css
