@@ -14,33 +14,36 @@ Write-Host "`n==========================================================" -Foreg
 Write-Host "  Instalación y Configuración del Entorno PowerShell" -ForegroundColor Cyan
 Write-Host "==========================================================`n" -ForegroundColor Cyan
 
-# 1. Configurar vinculación de $PROFILE mediante Unión NTFS (Junction)
+# 1. Configurar vinculación dual de $PROFILE (PS 5.1 y PS 7) mediante Unión NTFS (Junction)
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-$profilePath = $PROFILE
+$docsDir   = [Environment]::GetFolderPath('MyDocuments')
 
-if ($profilePath) {
-    $currentProfileDir = Split-Path -Parent $profilePath
-    $isDirectMatch = ($scriptDir.TrimEnd('\', '/') -ieq $currentProfileDir.TrimEnd('\', '/'))
+$targetProfileDirs = @(
+    (Join-Path $docsDir "WindowsPowerShell"),
+    (Join-Path $docsDir "PowerShell")
+)
 
-    if (-not $isDirectMatch) {
-        Write-Host "● Comprobando vinculación de `$PROFILE con dotfiles..." -ForegroundColor Cyan
+Write-Host "● Comprobando vinculación dual de `$PROFILE (PS 5.1 y PS 7) con dotfiles..." -ForegroundColor Cyan
 
-        $item = Get-Item -LiteralPath $currentProfileDir -ErrorAction SilentlyContinue
-        $isJunction = $item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+foreach ($targetDir in $targetProfileDirs) {
+    $dirName = Split-Path -Leaf $targetDir
+    if ($scriptDir.TrimEnd('\', '/') -ieq $targetDir.TrimEnd('\', '/')) {
+        continue
+    }
 
-        if ($isJunction) {
-            Write-Host "✓ `$PROFILE ya está vinculado a dotfiles mediante Unión NTFS." -ForegroundColor Green
-        } else {
-            if (Test-Path -LiteralPath $currentProfileDir) {
-                $backupDir = "${currentProfileDir}_bak"
-                Move-Item -LiteralPath $currentProfileDir -Destination $backupDir -Force
-                Write-Host "  (!) Carpeta previa respaldada en '$backupDir'." -ForegroundColor Yellow
-            }
-            cmd /c mklink /J "$currentProfileDir" "$scriptDir" | Out-Null
-            Write-Host "✓ Unión NTFS creada con éxito: '$currentProfileDir' -> '$scriptDir'." -ForegroundColor Green
-        }
+    $item = Get-Item -LiteralPath $targetDir -ErrorAction SilentlyContinue
+    $isJunction = $item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+
+    if ($isJunction) {
+        Write-Host "✓ $dirName ya está vinculado a dotfiles mediante Unión NTFS." -ForegroundColor Green
     } else {
-        Write-Host "✓ Repositorio ejecutándose directamente desde el directorio nativo de `$PROFILE." -ForegroundColor Green
+        if (Test-Path -LiteralPath $targetDir) {
+            $backupDir = "${targetDir}_bak"
+            Move-Item -LiteralPath $targetDir -Destination $backupDir -Force
+            Write-Host "  (!) Carpeta previa '$dirName' respaldada en '$backupDir'." -ForegroundColor Yellow
+        }
+        cmd /c mklink /J "$targetDir" "$scriptDir" | Out-Null
+        Write-Host "✓ Unión NTFS creada con éxito: '$dirName' -> '$scriptDir'." -ForegroundColor Green
     }
 }
 

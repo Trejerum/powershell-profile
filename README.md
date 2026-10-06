@@ -1,6 +1,6 @@
 # PowerShell Profile & Centro de Mando Developer
 
-Configuración avanzada para Windows PowerShell 5.1 (`Microsoft.PowerShell_profile.ps1`). Convierte la consola en un centro de mando integral que aúna la velocidad del paso de objetos en .NET con la agilidad de los flujos de trabajo Unix, integrando **Git**, **Lazygit**, **Neovim**, **Ripgrep**, **SQL Server** y herramientas de diagnóstico de sistema y red.
+Configuración avanzada para **PowerShell 7 (`pwsh`)** y **Windows PowerShell 5.1** (`Microsoft.PowerShell_profile.ps1`). Diseñada con arquitectura híbrida y compatibilidad dual total (ver [Guía de Migración y Arquitectura Dual](docs/powershell-7-migration.md)). Convierte la consola en un centro de mando integral que aúna la velocidad del paso de objetos en .NET moderno (.NET 9) con la agilidad de los flujos de trabajo Unix, integrando **Git**, **Lazygit**, **Neovim**, **Ripgrep**, **SQL Server** y herramientas de diagnóstico de sistema y red.
 
 ---
 
@@ -62,7 +62,7 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
 | **`30-sql.ps1`** | **SQL Server Toolkit** | Motor ADO.NET (`q`), diagnóstico de conectividad multi-perfil (`sql-ping`/`qping`), sesión persistente (`qconnect`, `qdisc`, `use`), exploración (`dbs`, `tables`, `views`, `top`, `desc`, `count`), búsqueda (`find-table`, `find-col`, `find-code`), monitor (`who`, `see`, `see-idx`), exportación (`q2excel`, `qclip`, `qfmt`), scratchpad (`vsql`) y autocompletado en consola (<kbd>Ctrl</kbd>+<kbd>Espacio</kbd>). |
 | **`40-utils.ps1`** | **Utilidades Generales** | Búsqueda difusa interactiva con `fzf` (`fe`/`vf`, `fcd`, `fhist`), benchmark del perfil (`profile-bench`/`pbench`), archivos (`touch`, `ff`, `head`, `tail`, `extract`), diagnóstico (`ports`, `kill-port`/`kp`, `psfind`, `myip`, `sysinfo`), portapapeles (`cb`), integración Neovim (`v`, `vrg`) y buscador de comandos (`hist`). |
 | **`50-help.ps1`** | **Centro de Ayuda** | Guía de comandos agrupada por áreas (`phelp`, `phelp git`, `phelp sql`, `phelp fzf`) y fichas técnicas detalladas con ejemplos (`phelp <comando>`). |
-| **`99-prompt.ps1`** | **Prompt Personalizado** | Muestra la ruta activa, el estado en vivo de Git vía `posh-git` y el badge de conexión persistente a SQL Server (`[BD ⚡]`). |
+| **`99-prompt.ps1`** | **Prompt Personalizado** | Muestra el prefijo de versión activa (`PS7`/`PS5`), la ruta activa, el estado en vivo de Git vía `posh-git` y el badge de conexión persistente a SQL Server (`[BD ⚡]`). |
 
 ---
 
