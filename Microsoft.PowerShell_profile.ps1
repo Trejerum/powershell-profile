@@ -16,7 +16,10 @@
 #   profile.d/99-prompt.ps1      - Prompt interactivo (estado Git + SQL Server)
 # ==============================================================================
 
-$script:ProfileDir = if ($PSScriptRoot) {
+$dotfilesProfile = Join-Path $HOME ".dotfiles\powershell"
+$script:ProfileDir = if (Test-Path -LiteralPath $dotfilesProfile) {
+    $dotfilesProfile
+} elseif ($PSScriptRoot) {
     $PSScriptRoot
 } elseif ($MyInvocation.MyCommand.Path) {
     Split-Path -Parent $MyInvocation.MyCommand.Path

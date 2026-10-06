@@ -82,10 +82,10 @@ El perfil utiliza un cargador raíz ultraligero (`Microsoft.PowerShell_profile.p
 - **`proj [nombre]` (alias de `repos`)**: Salto dinámico a cualquier subproyecto dentro de `Documentos\Proyectos` con autocompletado <kbd>Tab</kbd>. Si se ejecuta sin parámetros, muestra el dashboard de proyectos.
 - **`reload` (alias `rel`, `rprof`, `reload-profile`)**: Recarga el perfil en la consola actual con confirmación visual.
 - **Atajos de entorno y configuración:**
-  - `profile`: Salta a la carpeta del perfil de PowerShell.
+  - `profile` (alias `cdprofile`, `dotfiles`): Salta al repositorio de dotfiles de PowerShell (`~/.dotfiles/powershell`).
   - `notes [args]`: Navega a `$HOME\Documentos\Notes` (o ejecuta captura/apertura si recibe argumentos).
   - `ep [modulo]` (alias `edit-profile`): Abre `Microsoft.PowerShell_profile.ps1`, un módulo específico (ej. `ep notes`, `ep sql`, `ep git`, `ep utils`) o tu configuración local personal (`ep local`) en Neovim.
-  - `en` (alias `edit-nvim`): Abre la configuración de Neovim (`~\AppData\Local\nvim`).
+  - `en` (alias `edit-nvim`) / `nvim-config` (alias `cdnvim`): Abre o navega a la configuración de Neovim (`~/.dotfiles/nvim`).
 
 ---
 

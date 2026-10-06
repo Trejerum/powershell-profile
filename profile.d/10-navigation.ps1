@@ -10,15 +10,28 @@ $global:ProjectsRoot = if ($env:PROJECTS_DIR -and (Test-Path -LiteralPath $env:P
 }
 
 function profile {
-    $target = if ($global:ProfileDir) { $global:ProfileDir } else { Split-Path -Parent $PROFILE }
+    <#
+    .SYNOPSIS
+        Navega al repositorio de dotfiles de PowerShell (~/.dotfiles/powershell).
+    #>
+    $dotfilesProfile = Join-Path $HOME ".dotfiles\powershell"
+    $target = if (Test-Path -LiteralPath $dotfilesProfile) {
+        $dotfilesProfile
+    } elseif ($global:ProfileDir) {
+        $global:ProfileDir
+    } else {
+        Split-Path -Parent $PROFILE
+    }
     Set-Location -LiteralPath $target
 }
+Set-Alias cdprofile profile
+Set-Alias dotfiles  profile
 function notes   { Set-Location (Join-Path $HOME "Documentos\Notes") }
 
 function nvim-config {
     <#
     .SYNOPSIS
-        Navega al directorio de configuración de Neovim ($env:LOCALAPPDATA\nvim).
+        Navega al directorio de configuración de Neovim (~/.dotfiles/nvim).
     .EXAMPLE
         nvim-config
         nvim-config -Edit
@@ -28,7 +41,12 @@ function nvim-config {
         [Alias('e', 'v')]
         [switch]$Edit
     )
-    $nvimDir = Join-Path $env:LOCALAPPDATA "nvim"
+    $dotfilesNvim = Join-Path $HOME ".dotfiles\nvim"
+    $nvimDir = if (Test-Path -LiteralPath $dotfilesNvim) {
+        $dotfilesNvim
+    } else {
+        Join-Path $env:LOCALAPPDATA "nvim"
+    }
     if (-not (Test-Path -LiteralPath $nvimDir)) {
         Write-Warning "El directorio de configuración de Neovim no existe: $nvimDir"
         return
@@ -56,7 +74,14 @@ function ep {
         [Parameter(Position = 0)]
         [string]$Module
     )
-    $profDir = if ($global:ProfileDir) { $global:ProfileDir } else { Split-Path -Parent $PROFILE }
+    $dotfilesProfile = Join-Path $HOME ".dotfiles\powershell"
+    $profDir = if (Test-Path -LiteralPath $dotfilesProfile) {
+        $dotfilesProfile
+    } elseif ($global:ProfileDir) {
+        $global:ProfileDir
+    } else {
+        Split-Path -Parent $PROFILE
+    }
     if ($Module) {
         if ($Module -ieq "local") {
             $localF = Join-Path $profDir "profile.local.ps1"
@@ -83,7 +108,7 @@ function ep {
 function en {
     <#
     .SYNOPSIS
-        Abre la configuración de Neovim ($env:LOCALAPPDATA\nvim) o un archivo específico en Neovim.
+        Abre la configuración de Neovim (~/.dotfiles/nvim) o un archivo específico en Neovim.
     .EXAMPLE
         en
         en init.lua
@@ -92,7 +117,12 @@ function en {
         [Parameter(Position = 0)]
         [string]$File
     )
-    $nvimDir = Join-Path $env:LOCALAPPDATA "nvim"
+    $dotfilesNvim = Join-Path $HOME ".dotfiles\nvim"
+    $nvimDir = if (Test-Path -LiteralPath $dotfilesNvim) {
+        $dotfilesNvim
+    } else {
+        Join-Path $env:LOCALAPPDATA "nvim"
+    }
     if ($File) {
         $target = Join-Path $nvimDir $File
         if (Test-Path -LiteralPath $target) {
