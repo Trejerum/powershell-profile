@@ -29,6 +29,16 @@ if (Get-Command fzf -ErrorAction SilentlyContinue) {
     }
 }
 
+# Configuración global de Ripgrep y Lazygit (compartida con Neovim)
+$rgCfg = Join-Path $HOME ".dotfiles\config\ripgreprc"
+if (Test-Path -LiteralPath $rgCfg) {
+    $env:RIPGREP_CONFIG_PATH = $rgCfg
+}
+$lgCfg = Join-Path $HOME ".dotfiles\lazygit\config.yml"
+if (Test-Path -LiteralPath $lgCfg) {
+    $env:LG_CONFIG_FILE = $lgCfg
+}
+
 # ==============================================================================
 # INTEGRACIÓN CON PSREADLINE (HISTORIAL & ATAJOS DE CONSOLA)
 # ==============================================================================
