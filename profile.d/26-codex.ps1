@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # INTEGRACIÓN OPENAI CODEX CLI (CODEX & VS CODE)
 # ==============================================================================
 # Proporciona integración nativa con OpenAI Codex CLI (empaquetado con la extensión
@@ -12,6 +12,7 @@
 #   codex-review, cxreview - Revisión de código automatizada del repo Git actual
 #   codex-apply, cxapply   - Aplica el diff más reciente producido por Codex
 #   codex-exec, cxexec     - Ejecución no interactiva de tareas con Codex
+#   codex-radar, cxradar   - Monitor y digest en tiempo real del estado de agentes activos
 #   codex-doctor, cxdoctor - Diagnóstico de estado, auth y sandbox de Codex
 # ==============================================================================
 
@@ -389,6 +390,246 @@ function codex-doctor {
     & $exe --no-daemon doctor
 }
 Set-Alias cxdoctor codex-doctor
+
+function Get-CodexRadar {
+    <#
+    .SYNOPSIS
+        Monitor y digest en tiempo real del estado de los agentes de Codex activos (VS Code / CLI).
+    .DESCRIPTION
+        Inspecciona de forma pasiva y no bloqueante los rollouts más recientes en ~/.codex/sessions/,
+        extrayendo el estado actual (Completado / En progreso), último prompt del usuario,
+        última respuesta del asistente y tokens consumidos.
+        
+        Diseñado con tolerancia a fallos completa: si ~/.codex no existe o no hay sesiones,
+        retorna limpiamente sin generar excepciones ni alterar el rendimiento del perfil.
+    .PARAMETER Count
+        Número de agentes / sesiones recientes a inspeccionar (por defecto 3).
+    .PARAMETER Filter
+        Filtro opcional por título o UUID de la conversación.
+    .PARAMETER Full
+        Muestra los textos completos sin truncar.
+    .PARAMETER Json
+        Retorna la salida como cadena JSON estructurada (ideal para orquestadores y Antigravity).
+    .PARAMETER Raw
+        Retorna los objetos PSCustomObject directamente en el pipeline de PowerShell.
+    .EXAMPLE
+        Get-CodexRadar
+        cxradar
+        cxradar 5
+        cxradar -Json
+        cxradar "Service Principal" -Full
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [int]$Count = 3,
+
+        [Parameter(Position = 1)]
+        [string]$Filter,
+
+        [switch]$Full,
+        [switch]$Json,
+        [switch]$Raw
+    )
+
+    $codexDir = Join-Path $HOME ".codex"
+    $sessionsDir = Join-Path $codexDir "sessions"
+    if (-not (Test-Path -LiteralPath $sessionsDir)) {
+        if ($Json) { return "[]" }
+        if ($Raw) { return @() }
+        Write-Host "● No se encontraron sesiones activas de Codex en ~/.codex/sessions." -ForegroundColor DarkGray
+        return
+    }
+
+    $indexMap = @{}
+    $indexPath = Join-Path $codexDir "session_index.jsonl"
+    if (Test-Path -LiteralPath $indexPath) {
+        try {
+            [System.IO.File]::ReadAllLines($indexPath, [System.Text.Encoding]::UTF8) | ForEach-Object {
+                try {
+                    $d = $_ | ConvertFrom-Json
+                    if ($d.id -and $d.thread_name) { $indexMap[$d.id] = $d.thread_name.Trim() }
+                } catch {}
+            }
+        } catch {}
+    }
+
+    try {
+        $files = [System.IO.Directory]::EnumerateFiles($sessionsDir, "rollout-*.jsonl", [System.IO.SearchOption]::AllDirectories)
+        $fileList = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+        foreach ($f in $files) {
+            $fileList.Add([System.IO.FileInfo]::new($f))
+        }
+        $fileList.Sort({ param($a, $b) $b.LastWriteTimeUtc.CompareTo($a.LastWriteTimeUtc) })
+    } catch {
+        if ($Json) { return "[]" }
+        if ($Raw) { return @() }
+        return
+    }
+
+    $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $idx = 1
+
+    foreach ($f in $fileList) {
+        $threadId = $null
+        if ($f.Name -match 'rollout-.*-([0-9a-fA-F\-]{36})\.jsonl$') {
+            $threadId = $matches[1]
+        }
+
+        $title = if ($threadId -and $indexMap.ContainsKey($threadId)) { $indexMap[$threadId] } else { "(Sin título)" }
+
+        # Aplicar filtro si se especificó
+        if ($Filter) {
+            $matchFilter = ($title -like "*$Filter*") -or ($threadId -like "*$Filter*")
+            if (-not $matchFilter) { continue }
+        }
+
+        $lastAssistant = ""
+        $lastUser = ""
+        $status = "Completado"
+        $tokens = 0
+
+        try {
+            $fs = [System.IO.File]::Open($f.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            try {
+                $bytesToRead = [Math]::Min($fs.Length, 262144)
+                $fs.Seek(-$bytesToRead, [System.IO.SeekOrigin]::End) | Out-Null
+                $buffer = New-Object byte[] $bytesToRead
+                $read = $fs.Read($buffer, 0, $bytesToRead)
+                $text = [System.Text.Encoding]::UTF8.GetString($buffer, 0, $read)
+                $rawLines = $text -split "`r?`n"
+
+                $foundComplete = $false
+                $foundStarted = $false
+
+                for ($i = $rawLines.Count - 1; $i -ge 0; $i--) {
+                    $line = $rawLines[$i].Trim()
+                    if (-not $line -or -not $line.StartsWith("{")) { continue }
+                    try {
+                        $j = $line | ConvertFrom-Json
+                        if (-not $foundComplete -and -not $foundStarted) {
+                            if ($j.payload.type -eq "task_complete") {
+                                $foundComplete = $true
+                                $status = "Completado"
+                            } elseif ($j.payload.type -eq "task_started") {
+                                $foundStarted = $true
+                                $status = "En progreso..."
+                            }
+                        }
+                        if (-not $lastAssistant -and $j.payload.type -eq "message" -and $j.payload.role -eq "assistant") {
+                            $lastAssistant = (($j.payload.content | ForEach-Object { $_.text }) -join "`n").Trim()
+                        }
+                        if (-not $lastUser -and $j.payload.type -eq "message" -and $j.payload.role -eq "user") {
+                            $rawU = (($j.payload.content | ForEach-Object { $_.text }) -join "`n").Trim()
+                            if ($rawU -match '(?s)## My request:\s*(.*)') {
+                                $lastUser = $matches[1].Trim()
+                            } else {
+                                $lastUser = $rawU
+                            }
+                        }
+                        if ($tokens -eq 0 -and $j.type -eq "token_usage_record") {
+                            $tokens = $j.payload.usage.total_tokens
+                        }
+                    } catch {}
+                    if ($lastAssistant -and $lastUser -and ($foundComplete -or $foundStarted)) { break }
+                }
+            } finally {
+                $fs.Dispose()
+            }
+        } catch {}
+
+        $diff = (Get-Date) - $f.LastWriteTime
+        $relTime = if ($diff.TotalMinutes -lt 1) { "hace unos seg" }
+                   elseif ($diff.TotalMinutes -lt 60) { "hace $([int]$diff.TotalMinutes)m" }
+                   elseif ($diff.TotalHours -lt 24) { "hace $([int]$diff.TotalHours)h" }
+                   else { "hace $([int]$diff.TotalDays)d" }
+
+        $item = [PSCustomObject]@{
+            Index          = $idx
+            ID             = $threadId
+            IDShort        = if ($threadId) { $threadId.Substring(0, 8) } else { "N/A" }
+            Titulo         = $title
+            Estado         = $status
+            Modificado     = $f.LastWriteTime
+            ModificadoStr  = $f.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+            TiempoRelativo = $relTime
+            Tokens         = $tokens
+            UltimoPrompt   = $lastUser
+            UltimaResp     = $lastAssistant
+            Archivo        = $f.FullName
+        }
+
+        $results.Add($item)
+        $idx++
+        if ($results.Count -ge $Count) { break }
+    }
+
+    if ($Json) {
+        return ($results | ConvertTo-Json -Depth 5)
+    }
+
+    if ($Raw) {
+        return ,$results.ToArray()
+    }
+
+    if ($results.Count -eq 0) {
+        Write-Host "● No se encontraron conversaciones coincidentes en ~/.codex." -ForegroundColor DarkGray
+        return
+    }
+
+    Write-Host "`n=== [ Codex Radar ] - Agentes Activos ($($results.Count)) ===`n" -ForegroundColor DarkCyan
+    foreach ($r in $results) {
+        $idxStr = " [$($r.Index)]".PadRight(5)
+        Write-Host $idxStr -NoNewline -ForegroundColor Yellow
+
+        if ($r.Estado -eq "Completado") {
+            Write-Host "✔ $($r.Estado) " -NoNewline -ForegroundColor Green
+        } elseif ($r.Estado -eq "En progreso...") {
+            Write-Host "◐ $($r.Estado) " -NoNewline -ForegroundColor Yellow
+        } else {
+            Write-Host "○ $($r.Estado) " -NoNewline -ForegroundColor DarkGray
+        }
+
+        Write-Host "| $($r.Titulo)" -ForegroundColor White
+        Write-Host "     ID: " -NoNewline -ForegroundColor DarkGray
+        Write-Host "$($r.IDShort)... " -NoNewline -ForegroundColor DarkCyan
+        Write-Host "($($r.TiempoRelativo) - $($r.Modificado.ToString('HH:mm:ss'))) " -NoNewline -ForegroundColor DarkGray
+        if ($r.Tokens -gt 0) {
+            Write-Host "Tokens: $($r.Tokens)" -ForegroundColor DarkMagenta
+        } else {
+            Write-Host ""
+        }
+
+        if ($r.UltimoPrompt) {
+            Write-Host "     Usuario:   " -NoNewline -ForegroundColor DarkYellow
+            if ($Full) {
+                Write-Host $r.UltimoPrompt -ForegroundColor Gray
+            } else {
+                $pClean = ($r.UltimoPrompt -replace '\s+', ' ').Trim()
+                $pLen = [Math]::Min(110, $pClean.Length)
+                Write-Host ($pClean.Substring(0, $pLen) + $(if ($pClean.Length -gt 110) { "..." } else { "" })) -ForegroundColor Gray
+            }
+        }
+
+        if ($r.UltimaResp) {
+            Write-Host "     Respuesta: " -NoNewline -ForegroundColor Cyan
+            if ($Full) {
+                Write-Host $r.UltimaResp -ForegroundColor White
+            } else {
+                $rClean = ($r.UltimaResp -replace '\s+', ' ').Trim()
+                $rLen = [Math]::Min(140, $rClean.Length)
+                Write-Host ($rClean.Substring(0, $rLen) + $(if ($rClean.Length -gt 140) { "..." } else { "" })) -ForegroundColor White
+            }
+        }
+        Write-Host ""
+    }
+
+    Write-Host "Tip: Usa 'cxresume [n]' para reanudar cualquier hilo en tu terminal.`n" -ForegroundColor DarkGray
+}
+Set-Alias cxradar Get-CodexRadar
+Set-Alias cx-radar Get-CodexRadar
+Set-Alias codex-radar Get-CodexRadar
+Set-Alias cxstatus Get-CodexRadar
 
 # Inicializar resolución en segundo plano para registrar ruta en PATH
 $null = Get-CodexExe

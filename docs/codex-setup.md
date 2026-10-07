@@ -48,6 +48,7 @@ flowchart TD
 | `codex-review` | `cxreview` | Auditoría de código automatizada no interactiva sobre el repo Git | `cxreview` |
 | `codex-apply` | `cxapply` | Aplica el diff más reciente propuesto por Codex con `git apply` | `cxapply` |
 | `codex-exec` | `cxexec` | Ejecución no interactiva en segundo plano | `cxexec "Genera script de backup"`, `cxexec -Json "..."` |
+| `codex-radar` | `cxradar`, `cxstatus` | Monitor y digest en tiempo real de agentes activos (multi-agente) | `cxradar`, `cxradar 5`, `cxradar -Json`, `cxradar -Full` |
 | `codex-doctor` | `cxdoctor` | Diagnóstico de salud, auth, conectividad y base de datos | `cxdoctor` |
 
 ---
@@ -85,3 +86,14 @@ Si experimentas problemas de conexión o quieres revisar el estado de tus bases 
 cxdoctor
 ```
 Muestra un reporte completo de autenticación, integridad de bases de datos de rollouts, modelos activos y estado del sandbox.
+
+### Flujo D: Supervisión Multi-Agente (Codex Radar)
+Cuando tienes múltiples ventanas de VS Code con agentes Codex trabajando simultáneamente:
+```powershell
+cxradar          # Resumen ejecutivo de los 3 agentes más recientes
+cxradar 5        # Resumir los 5 agentes más recientes
+cxradar -Full    # Ver respuestas completas sin truncar
+cxradar -Json    # Salida JSON estructurada para integración con Antigravity u orquestadores
+```
+Muestra de forma instantánea y no bloqueante el estado (Completado / En progreso), tokens consumidos y las últimas respuestas de cada agente sin necesidad de saltar entre ventanas de VS Code.
+
