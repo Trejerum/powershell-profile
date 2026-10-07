@@ -75,6 +75,17 @@ PowerShell 7 ha quedado configurado como el shell principal en las aplicaciones 
 ### 4.1. Windows Terminal
 * **Archivo:** `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json`
 * **Perfil por defecto:** GUID `{574e775e-4f2a-5b96-ac1e-a2962a402336}` (PowerShell 7).
+* **Definición en `profiles.list`:**
+  ```json
+  {
+      "guid": "{574e775e-4f2a-5b96-ac1e-a2962a402336}",
+      "hidden": false,
+      "name": "PowerShell 7",
+      "source": "Windows.Terminal.PowershellCore",
+      "startingDirectory": "%USERPROFILE%"
+  }
+  ```
+  *(La propiedad `"source": "Windows.Terminal.PowershellCore"` vincula la personalización con el generador dinámico nativo de Windows Terminal, evitando advertencias de GUIDs duplicados).*
 * Al pulsar `+` o iniciar Windows Terminal, arranca en PowerShell 7.
 * En el desplegable de pestañas sigue disponible el perfil clásico `Windows PowerShell` para emergencias.
 
