@@ -113,6 +113,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "psfind"; Sintaxis = "psfind <nombre>"; Detalle = "Busca procesos en ejecución mostrando PID, memoria en MB y consumo de CPU (alias: psgrep)"; Ejemplos = @("psfind node", "psfind sql", "psfind dotnet") }
         [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "myip"; Sintaxis = "myip"; Detalle = "Muestra la dirección IP local de la tarjeta de red activa y la IP pública externa"; Ejemplos = @("myip") }
         [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "sysinfo"; Sintaxis = "sysinfo"; Detalle = "Resumen de salud del equipo: uptime de Windows, uso de memoria RAM y espacio libre en discos"; Ejemplos = @("sysinfo") }
+        [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "wiztree"; Sintaxis = "wiztree [ruta/disco]"; Detalle = "Analizador ultrarrápido de espacio en disco vía NTFS MFT con mapa visual de bloques"; Ejemplos = @("wiztree", "wiztree C:", "wiztree .") }
 
         # 5. SQL Server Toolkit
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qenv"; Sintaxis = "qenv [perfil]"; Detalle = "Muestra o activa los entornos/conexiones de sql-connections.json (alias: qprofiles, qconns)"; Ejemplos = @("qenv", "qenv pre", "qenv local") }
