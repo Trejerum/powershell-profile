@@ -137,6 +137,7 @@ $cliTools = @(
     @{ Cmd = "bat";     Name = "bat (Cat con syntax highlight)"; Winget = "sharkdp.bat" }
     @{ Cmd = "7z";      Name = "7-Zip";   Winget = "7zip.7zip" }
     @{ Cmd = "wiztree"; Name = "WizTree (Analizador de disco)"; Winget = "AntibodySoftware.WizTree" }
+    @{ Cmd = "dust";    Name = "dust (Analizador de disco en terminal)"; Winget = "bootandy.dust" }
 )
 
 $missingTools = @()
