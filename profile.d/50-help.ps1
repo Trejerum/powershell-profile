@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # 4. AYUDA RÁPIDA DEL PERFIL (CENTRO DE MANDO)
 # ==============================================================================
 
@@ -94,6 +94,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gwip"; Sintaxis = "gwip [mensaje]"; Detalle = "Guarda todo el trabajo en curso en un commit temporal rápido para poder cambiar de rama al vuelo"; Ejemplos = @("gwip", "gwip 'trabajando en auth'") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gunwip"; Sintaxis = "gunwip"; Detalle = "Restaura el commit temporal creado previamente con gwip y devuelve los cambios al árbol de trabajo"; Ejemplos = @("gunwip") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gclean"; Sintaxis = "gclean [-Force]"; Detalle = "Poda referencias remotas (fetch -p) y elimina de forma segura ramas locales ya borradas en el remoto"; Ejemplos = @("gclean", "gclean -Force") }
+        [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gme"; Sintaxis = "gme"; Detalle = "Lista ramas remotas donde los últimos commits pertenecen al usuario actual"; Ejemplos = @("gme") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gss"; Sintaxis = "gss [mensaje]"; Detalle = "Guarda cambios en el stash con timestamp y rama activa (incluye archivos sin rastrear)"; Ejemplos = @("gss", "gss 'refactor conexion'") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gsl"; Sintaxis = "gsl"; Detalle = "Lista los stashes guardados con fechas relativas y colores legibles"; Ejemplos = @("gsl") }
         [PSCustomObject]@{ Categoria = "Git & Lazygit"; Comando = "gsp"; Sintaxis = "gsp [índice]"; Detalle = "Aplica y retira el stash indicado (por defecto el último stash@{0})"; Ejemplos = @("gsp", "gsp 1") }
@@ -129,7 +130,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-table"; Sintaxis = "find-table <patrón>"; Detalle = "Busca tablas y vistas por coincidencia de texto en el nombre"; Ejemplos = @("find-table Stock", "find-table Pedido -Grid") }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-col"; Sintaxis = "find-col <columna>"; Detalle = "Busca en qué tablas y vistas existe una columna dada en toda la base de datos"; Ejemplos = @("find-col IdArticulo", "find-col FechaCreacion") }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "find-code"; Sintaxis = "find-code <patrón>"; Detalle = "Busca texto dentro del DDL de SPs, Vistas, Funciones y Triggers (alias: find-sp, grep-sql)"; Ejemplos = @("find-code 'usp_Calcular'", "find-sp 'ActualizarStock' -Grid") }
-        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who"; Sintaxis = "who [-Grid]"; Detalle = "Monitor en tiempo real de sesiones activas de usuario, bloqueos (blocking) y consultas"; Ejemplos = @("who", "who -Grid") }
+        [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "who"; Sintaxis = "who [-Grid] [-Clip]"; Detalle = "Monitor en tiempo real de sesiones activas de usuario, bloqueos (blocking) y consultas (alias: locks, sql-who)"; Ejemplos = @("who", "locks", "who -Grid") }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see"; Sintaxis = "see <objeto> [-Clip]"; Detalle = "Muestra el código fuente DDL de un SP, Vista, Función o Trigger en consola"; Ejemplos = @("see usp_RecalcularStock", "see vArticulosActivos -Clip") }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "see-idx"; Sintaxis = "see-idx <tabla>"; Detalle = "Inspecciona los índices definidos, tipo (Clustered/Nonclustered) y columnas clave"; Ejemplos = @("see-idx Articulos") }
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "q2excel"; Sintaxis = "q2excel <query/.sql>"; Detalle = "Ejecuta una consulta SQL y la abre directamente en Excel en formato español (alias: qexcel)"; Ejemplos = @("q2excel 'SELECT * FROM Articulos'", "qexcel ./informe.sql") }
@@ -162,6 +163,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxapply"; Sintaxis = "cxapply"; Detalle = "Aplica el último diff o parche producido por el agente de Codex al árbol de trabajo de Git (alias: codex-apply, cx-apply)"; Ejemplos = @("cxapply", "codex-apply") }
         [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxexec"; Sintaxis = "cxexec <prompt> [-Json]"; Detalle = "Ejecuta tareas en segundo plano en modo no interactivo con Codex (alias: codex-exec, cx-exec)"; Ejemplos = @("cxexec 'Genera un script de backup'", "cxexec -Json 'Analiza este JSON'") }
         [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxdoctor"; Sintaxis = "cxdoctor"; Detalle = "Diagnóstico exhaustivo de salud, autenticación, base de datos y sandbox de Codex (alias: codex-doctor)"; Ejemplos = @("cxdoctor", "codex-doctor") }
+        [PSCustomObject]@{ Categoria = "Codex CLI & VS Code"; Comando = "cxradar"; Sintaxis = "cxradar [n] [-Full] [-Json]"; Detalle = "Monitor y digest en tiempo real de agentes activos de Codex en VS Code/CLI (alias: cxstatus, codex-radar)"; Ejemplos = @("cxradar", "cxradar 5", "cxradar -Full", "cxradar -Json") }
     )
 
     if ($Filter) {
