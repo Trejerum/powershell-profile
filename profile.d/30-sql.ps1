@@ -778,11 +778,42 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
         $executedSuccessfully = $false
         $maxAttempts = if ($isPersistent) { 2 } else { 1 }
 
+        # Manejador para capturar sentencias PRINT y avisos informativos del motor SQL
+        $infoHandler = [System.Data.SqlClient.SqlInfoMessageEventHandler]{
+            param($sender, $eventArgs)
+            if ($eventArgs -and $eventArgs.Message) {
+                Write-Host "[SQL] $($eventArgs.Message)" -ForegroundColor DarkCyan
+            }
+        }
+        $conn.FireInfoMessageEventOnUserErrors = $false
+        $conn.add_InfoMessage($infoHandler)
+
+        $currentCmd = $null
+        $cancelHandler = $null
+
+        # Soporte para cancelación con Ctrl+C en PowerShell interactivo
+        try {
+            $cancelHandler = [System.ConsoleCancelEventHandler]{
+                param($sender, $args)
+                try {
+                    $args.Cancel = $true
+                    if ($currentCmd) {
+                        Write-Host "`n[INFO] Cancelando consulta SQL por solicitud del usuario..." -ForegroundColor Yellow
+                        $currentCmd.Cancel()
+                    }
+                }
+                catch { }
+            }
+            [Console]::add_CancelKeyPress($cancelHandler)
+        }
+        catch { }
+
         try {
             for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
                 try {
                     $cmd = $conn.CreateCommand()
                     $cmd.CommandTimeout = $Timeout
+                    $currentCmd = $cmd
 
                     for ($i = 0; $i -lt $batches.Count; $i++) {
                         $batch = $batches[$i]
@@ -850,6 +881,7 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
 
                     # Si es error de socket TCP y usamos sesión persistente: reconectar silenciosamente una sola vez
                     if ($isNetError -and $isPersistent -and $attempt -lt $maxAttempts) {
+                        try { $conn.remove_InfoMessage($infoHandler) } catch { }
                         qdisconnect -Quiet
                         try {
                             $cs = Get-SqlConnectionString -Server $savedServer -Database $savedDb -Timeout 10
@@ -862,6 +894,8 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                             [void]$initCmd.ExecuteNonQuery()
 
                             $conn = $global:SqlSession
+                            $conn.FireInfoMessageEventOnUserErrors = $false
+                            $conn.add_InfoMessage($infoHandler)
                             $dt.Clear()
                             continue
                         }
@@ -872,6 +906,12 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
                         }
                     }
 
+                    # Si fue cancelado por el usuario
+                    if ($fullErr -match '(?i)operation was canceled|cancelada por el usuario|cancelled') {
+                        Write-Warning "Consulta SQL abortada por el usuario."
+                        return
+                    }
+
                     # Si no es un socket zombi o falló el reintento:
                     Write-Error "Error de SQL Server: $($ex.Message)"
                     return
@@ -879,6 +919,14 @@ SELECT @__dryrun_affected AS [__DryRunRows__];
             }
         }
         finally {
+            if ($cancelHandler) {
+                try { [Console]::remove_CancelKeyPress($cancelHandler) } catch { }
+            }
+            if ($conn -and $infoHandler) {
+                try { $conn.remove_InfoMessage($infoHandler) } catch { }
+            }
+            $currentCmd = $null
+
             if ($Rollback) {
                 if ($conn -and $conn.State -eq 'Open') {
                     try {
