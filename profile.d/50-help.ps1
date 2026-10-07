@@ -115,6 +115,7 @@ function Show-ProfileHelp {
         [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "sysinfo"; Sintaxis = "sysinfo"; Detalle = "Resumen de salud del equipo: uptime de Windows, uso de memoria RAM y espacio libre en discos"; Ejemplos = @("sysinfo") }
         [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "wiztree"; Sintaxis = "wiztree [ruta/disco]"; Detalle = "Analizador ultrarrápido de espacio en disco vía NTFS MFT con mapa visual de bloques"; Ejemplos = @("wiztree", "wiztree C:", "wiztree .") }
         [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "dust"; Sintaxis = "dust [ruta] [-d n] [-n n]"; Detalle = "Árbol gráfico en terminal con barras de consumo de espacio en disco en tiempo real"; Ejemplos = @("dust", "dust -d 2", "dust -n 15", "dust C:\Users") }
+        [PSCustomObject]@{ Categoria = "Sistema & Red"; Comando = "btop"; Sintaxis = "btop"; Detalle = "Monitor TUI de recursos en tiempo real (CPU, RAM, discos, red y procesos interactivos)"; Ejemplos = @("btop") }
 
         # 5. SQL Server Toolkit
         [PSCustomObject]@{ Categoria = "SQL Server"; Comando = "qenv"; Sintaxis = "qenv [perfil]"; Detalle = "Muestra o activa los entornos/conexiones de sql-connections.json (alias: qprofiles, qconns)"; Ejemplos = @("qenv", "qenv pre", "qenv local") }

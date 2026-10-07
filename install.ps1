@@ -138,6 +138,7 @@ $cliTools = @(
     @{ Cmd = "7z";      Name = "7-Zip";   Winget = "7zip.7zip" }
     @{ Cmd = "wiztree"; Name = "WizTree (Analizador de disco)"; Winget = "AntibodySoftware.WizTree" }
     @{ Cmd = "dust";    Name = "dust (Analizador de disco en terminal)"; Winget = "bootandy.dust" }
+    @{ Cmd = "btop";    Name = "btop (Monitor de recursos TUI)"; Winget = "aristocratos.btop4win" }
 )
 
 $missingTools = @()
