@@ -128,6 +128,7 @@ if (Test-Path -LiteralPath $lgSource) {
 Write-Host "`n--- Comprobando herramientas recomendadas del sistema ---" -ForegroundColor DarkGray
 
 $cliTools = @(
+    @{ Cmd = "pwsh"; Name = "PowerShell 7"; Winget = "Microsoft.PowerShell" }
     @{ Cmd = "nvim"; Name = "Neovim"; Winget = "Neovim.Neovim" }
     @{ Cmd = "rg";   Name = "Ripgrep"; Winget = "BurntSushi.ripgrep.MSVC" }
     @{ Cmd = "lg";   Name = "Lazygit"; Winget = "jesseduffield.lazygit" }
@@ -154,7 +155,90 @@ if ($missingTools.Count -gt 0) {
     Write-Host "  winget install $($missingTools -join ' ')`n" -ForegroundColor DarkYellow
 }
 
-Write-Host "==========================================================" -ForegroundColor Green
+# 7. Configuración de terminales predeterminadas (Windows Terminal & VS Code)
+Write-Host "`n--- Configuración de terminales predeterminadas ---" -ForegroundColor DarkGray
+
+# 7.1. Windows Terminal (PowerShell 7 como perfil por defecto, sin duplicados)
+$wtCandidates = @(
+    (Join-Path $env:LOCALAPPDATA "Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"),
+    (Join-Path $env:LOCALAPPDATA "Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json"),
+    (Join-Path $env:LOCALAPPDATA "Microsoft\Windows Terminal\settings.json")
+)
+$wtSettings = $wtCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+
+if ($wtSettings) {
+    try {
+        $rawWt = Get-Content -LiteralPath $wtSettings -Raw -Encoding UTF8
+        $wtObj = $rawWt | ConvertFrom-Json
+        $pwshGuid = "{574e775e-4f2a-5b96-ac1e-a2962a402336}"
+
+        if ($wtObj.profiles -and $wtObj.profiles.list) {
+            $pList = [System.Collections.ArrayList]@($wtObj.profiles.list)
+            $existing = @($pList | Where-Object { $_.guid -eq $pwshGuid })
+
+            if ($existing.Count -gt 0) {
+                $primary = $existing[0]
+                $primary.name = "PowerShell 7"
+                $primary.source = "Windows.Terminal.PowershellCore"
+                $primary.startingDirectory = "%USERPROFILE%"
+                $primary.hidden = $false
+
+                if ($existing.Count -gt 1) {
+                    for ($i = $pList.Count - 1; $i -ge 0; $i--) {
+                        if ($pList[$i].guid -eq $pwshGuid -and $pList[$i] -ne $primary) {
+                            $pList.RemoveAt($i)
+                        }
+                    }
+                }
+            } else {
+                $newProf = [PSCustomObject]@{
+                    guid              = $pwshGuid
+                    hidden            = $false
+                    name              = "PowerShell 7"
+                    source            = "Windows.Terminal.PowershellCore"
+                    startingDirectory = "%USERPROFILE%"
+                }
+                [void]$pList.Insert(0, $newProf)
+            }
+
+            $wtObj.profiles.list = $pList
+            $wtObj.defaultProfile = $pwshGuid
+
+            $updatedJson = $wtObj | ConvertTo-Json -Depth 32
+            [System.IO.File]::WriteAllText($wtSettings, $updatedJson, [System.Text.Encoding]::UTF8)
+            Write-Host "✓ Windows Terminal configurado con PowerShell 7 como perfil predeterminado." -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Warning "No se pudo actualizar settings.json de Windows Terminal automáticamente: $_"
+    }
+} else {
+    Write-Host "○ Windows Terminal no instalado o no inicializado (se configurará al usar la app)." -ForegroundColor DarkGray
+}
+
+# 7.2. Visual Studio Code (Terminal integrado con PowerShell 7)
+$vscSettings = Join-Path $env:APPDATA "Code\User\settings.json"
+if (Test-Path -LiteralPath $vscSettings) {
+    try {
+        $rawVsc = Get-Content -LiteralPath $vscSettings -Raw -Encoding UTF8
+        $vscObj = $rawVsc | ConvertFrom-Json
+        $vscObj | Add-Member -NotePropertyName "terminal.integrated.defaultProfile.windows" -NotePropertyValue "PowerShell 7" -Force
+
+        $profilesProp = "terminal.integrated.profiles.windows"
+        $currentProfiles = if ($vscObj.PSObject.Properties[$profilesProp]) { $vscObj.$profilesProp } else { [PSCustomObject]@{} }
+        $currentProfiles | Add-Member -NotePropertyName "PowerShell 7" -NotePropertyValue ([PSCustomObject]@{ path = "pwsh.exe"; icon = "terminal-powershell" }) -Force
+        $vscObj | Add-Member -NotePropertyName $profilesProp -NotePropertyValue $currentProfiles -Force
+
+        $updatedVsc = $vscObj | ConvertTo-Json -Depth 32
+        [System.IO.File]::WriteAllText($vscSettings, $updatedVsc, [System.Text.Encoding]::UTF8)
+        Write-Host "✓ VS Code configurado con PowerShell 7 como terminal predeterminado." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "No se pudo actualizar settings.json de VS Code automáticamente: $_"
+    }
+}
+
+Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "  ¡Instalación completada con éxito!" -ForegroundColor Green
 Write-Host "  Para activar tu perfil ahora, ejecuta: . `$PROFILE" -ForegroundColor Cyan
 Write-Host "==========================================================`n" -ForegroundColor Green
