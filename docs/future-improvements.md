@@ -1,4 +1,4 @@
-# 🗺️ Hoja de Ruta y Mejoras Futuras (Future Improvements)
+﻿# 🗺️ Hoja de Ruta y Mejoras Futuras (Future Improvements)
 
 Este documento sirve como registro, especificación y planificación de posibles mejoras, nuevos módulos y utilidades a incorporar en el perfil de PowerShell a medio y largo plazo.
 
@@ -8,22 +8,22 @@ Cada propuesta incluye su **propósito**, **impacto en el flujo diario**, **mód
 
 ## 📊 Matriz de Evaluación Rápida
 
-| Área | Propuesta | Prioridad | Nivel de Riesgo / Esfuerzo | Módulo Destino |
-| :--- | :--- | :---: | :---: | :--- |
-| **SQL & Datos** | Diagnóstico en vivo con DMVs (`sql-who`, `sql-locks`, `sql-top-cpu`) | 🟢 Alta | 🟢 Nulo (ADO.NET nativo) | `profile.d/30-sql.ps1` |
-| **SQL & Datos** | Comparador de resultados entre entornos (`sql-diff`) | 🟡 Media | 🟢 Nulo (ADO.NET nativo) | `profile.d/30-sql.ps1` |
-| **Terminal / Logs** | Visor de logs con coloreado semántico en vivo (`tailf` / `watch-log`) | 🟢 Alta | 🟢 Nulo (PowerShell nativo) | `profile.d/40-utils.ps1` |
-| **Terminal / Monitoreo** | Loop de monitoreo continuo interactivo (`watch`) | 🟢 Alta | 🟢 Nulo (PowerShell nativo) | `profile.d/40-utils.ps1` |
-| **Desarrollo / Scaffolding** | Generador de scripts y migraciones (`new-script`, `new-migration`) | 🟡 Media | 🟢 Nulo (Plantillas seguras) | `profile.d/40-utils.ps1` |
-| **Editor / Portapapeles** | Comparador inteligente de portapapeles (`clip-diff` con Neovim/VSCode) | 🟡 Media | 🟢 Nulo (Usa `nvim -d`) | `profile.d/40-utils.ps1` |
-| **Workspaces** | Cambio de contexto y espacio de trabajo (`work <proyecto>`) | 🟡 Media | 🟢 Nulo (Orquestación local) | `profile.d/10-navigation.ps1` |
-| **Rendimiento** | Benchmark y profiling de bloques de código (`bench`) | ⚪ Media/Baja | 🟢 Nulo (PowerShell nativo) | `profile.d/40-utils.ps1` |
+| Área | Propuesta | Estado | Módulo Destino |
+| :--- | :--- | :---: | :--- |
+| **SQL & Datos** | Diagnóstico en vivo con DMVs (`who`, `see`, `see-idx`) | ✅ Implementado | `profile.d/30-sql.ps1` |
+| **SQL & Datos** | Comparador de resultados entre entornos (`sql-diff`) | 🟡 Pendiente | `profile.d/30-sql.ps1` |
+| **Terminal / Logs** | Visor de logs con coloreado semántico en vivo (`tailf` / `watch-log`) | 🟢 Pendiente | `profile.d/40-utils.ps1` |
+| **Terminal / Monitoreo** | Loop de monitoreo continuo interactivo (`watch`) | ✅ Implementado | `profile.d/40-utils.ps1` |
+| **Desarrollo / Scaffolding** | Generador de scripts y migraciones (`new-script`, `new-migration`) | 🟡 Pendiente | `profile.d/40-utils.ps1` |
+| **Editor / Portapapeles** | Comparador inteligente de portapapeles (`clip-diff` / `vdiff-clip`) | ✅ Implementado | `profile.d/40-utils.ps1` |
+| **Workspaces** | Cambio de contexto y espacio de trabajo (`work <proyecto>`) | 🟡 Pendiente | `profile.d/10-navigation.ps1` |
+| **Rendimiento** | Benchmark y profiling del perfil (`profile-bench` / `pbench`) | ✅ Implementado | `profile.d/40-utils.ps1` |
 
 ---
 
 ## 1. 🗄️ Diagnóstico y Monitoreo SQL en Vivo (DMVs de SQL Server)
 
-- [ ] **Comandos de diagnóstico rápido de base de datos**
+- [x] **Comandos de diagnóstico rápido de base de datos (`who`, `see`, `see-idx`)** *(Implementado en `profile.d/30-sql.ps1`)*
   - **Contexto:** Actualmente `profile.d/30-sql.ps1` cuenta con un motor completo de ADO.NET (`q`, `sql-session`, `table`, `sp`, `sql-ping`, `sql-export`), pero ante cuellos de botella o bloqueos en servidores de desarrollo o producción, es necesario escribir consultas complejas a mano.
   - **Propuestas:**
     1. **`sql-who`**: Alternativa limpia y formateada a `sp_who2`:
@@ -70,7 +70,7 @@ Cada propuesta incluye su **propósito**, **impacto en el flujo diario**, **mód
 
 ## 4. ⏱️ Monitoreo Continuo en Terminal (`watch`)
 
-- [ ] **Ejecución periódica en bucle de comandos y consultas**
+- [x] **Ejecución periódica en bucle de comandos y consultas (`watch`)** *(Implementado en `profile.d/40-utils.ps1`)*
   - **Contexto:** En entornos Linux, la herramienta `watch` permite observar la evolución de un comando cada N segundos. En PowerShell no existe un comando nativo estándar equivalente.
   - **Propuesta:**
     - Sintaxis: `watch <segundos> { <scriptblock> }`
@@ -115,7 +115,7 @@ Cada propuesta incluye su **propósito**, **impacto en el flujo diario**, **mód
 
 ## 6. 📋 Comparador Inteligente de Portapapeles (`clip-diff`)
 
-- [ ] **Comparar portapapeles contra archivos o selecciones**
+- [x] **Comparar portapapeles contra archivos o selecciones (`clip-diff` / `vdiff-clip`)** *(Implementado en `profile.d/40-utils.ps1`)*
   - **Contexto:** Frecuentemente se copia una respuesta JSON de una API, un snippet o un log al portapapeles y se quiere comparar rápidamente con un archivo local sin tener que crear y guardar archivos temporales a mano.
   - **Propuesta:**
     - Comando `clip-diff [archivo_local]` (alias: `vdiff-clip`):
