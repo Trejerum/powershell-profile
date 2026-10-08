@@ -802,28 +802,46 @@ function note-roll {
         Write-Host "● Creada nueva nota diaria: $todayStr.md" -ForegroundColor Cyan
     }
 
-    $todayContent = [System.IO.File]::ReadAllText($todayFile, [System.Text.Encoding]::UTF8)
+    $todayLines = [System.Collections.Generic.List[string]]::new(
+        [System.IO.File]::ReadAllLines($todayFile, [System.Text.Encoding]::UTF8)
+    )
+    $todayContent = $todayLines -join "`n"
 
     # Filtrar las tareas que ya estén traspasadas a hoy para evitar duplicados
     $toAdd = @()
     $indicesMigrated = @()
     for ($k = 0; $k -lt $pendingTasks.Count; $k++) {
         $task = $pendingTasks[$k]
-        if (-not ($todayContent.Contains($task))) {
-            $toAdd += "- [ ] $task"
+        # Extraer texto base si ya provenía de una migración previa
+        $baseTask = if ($task -match '^\s*\[>\s*\d{8}\]\s*(.*)$') { $matches[1] } else { $task }
+        if (-not ($todayContent.Contains($baseTask))) {
+            $toAdd += "- [ ] [> $prevStr] $baseTask"
         }
         $indicesMigrated += $pendingIndices[$k]
     }
 
     if ($toAdd.Count -gt 0) {
-        # Agregar encabezado de sección en hoy
-        $appendLines = @()
-        $appendLines += ""
-        $appendLines += "## Migradas de $prevStr"
-        $appendLines += $toAdd
+        # Encontrar la posición óptima de inserción:
+        # Justo después del título principal (# YYYYMMDD) y las líneas vacías inmediatas,
+        # para que queden al inicio de la lista de tareas del día sin atrapar líneas futuras bajo subtítulos.
+        $insertIdx = 0
+        for ($i = 0; $i -lt $todayLines.Count; $i++) {
+            if ($todayLines[$i] -match '^#\s+') {
+                $insertIdx = $i + 1
+                while ($insertIdx -lt $todayLines.Count -and [string]::IsNullOrWhiteSpace($todayLines[$insertIdx])) {
+                    $insertIdx++
+                }
+                break
+            }
+        }
 
-        $crlfToAppend = ($appendLines -join "`r`n") + "`r`n"
-        [System.IO.File]::AppendAllText($todayFile, $crlfToAppend, [System.Text.Encoding]::UTF8)
+        for ($m = 0; $m -lt $toAdd.Count; $m++) {
+            $todayLines.Insert($insertIdx + $m, $toAdd[$m])
+        }
+
+        $crlfToday = ($todayLines -join "`r`n") + "`r`n"
+        $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+        [System.IO.File]::WriteAllText($todayFile, $crlfToday, $utf8Bom)
     }
 
     # Marcar por defecto en el origen como migrado (- [>]) salvo que se especifique -KeepUnmarked
@@ -837,7 +855,7 @@ function note-roll {
     }
 
     if ($toAdd.Count -gt 0) {
-        Write-Host "✓ $($toAdd.Count) tarea(s) migrada(s) de $prevStr.md a $todayStr.md (marcadas como [>] en $prevStr.md):" -ForegroundColor Green
+        Write-Host "✓ $($toAdd.Count) tarea(s) migrada(s) de $prevStr.md a $todayStr.md (insertadas al inicio y marcadas como [>] en $prevStr.md):" -ForegroundColor Green
         foreach ($item in $toAdd) {
             Write-Host "  → $($item -replace '^-\s*\[ \]\s*', '')" -ForegroundColor White
         }
