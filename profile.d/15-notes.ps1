@@ -1311,7 +1311,9 @@ function ngit {
         [switch]$Repos,
 
         [Alias('Anyone')]
-        [switch]$AllAuthors
+        [switch]$AllAuthors,
+
+        [switch]$CurrentBranchOnly
     )
 
     $isAllRepos = ($Repos -or ($Target -and $Target -in @('repos', 'all', 'proyectos', '-repos', '-all')))
@@ -1416,7 +1418,8 @@ function ngit {
             }
         }
 
-        $commitsRaw = git -C "$repoPath" log --since="midnight" @authorFlags --format="format:- [%h] %s" 2>$null
+        $branchArgs = if ($CurrentBranchOnly) { @('HEAD') } else { @('HEAD', '--branches') }
+        $commitsRaw = git -C "$repoPath" log @branchArgs --since="midnight" @authorFlags --format="format:- [%h] %s" 2>$null
         if (-not $commitsRaw -or [string]::IsNullOrWhiteSpace(($commitsRaw -join ""))) {
             if (-not $isAllRepos) {
                 Write-Host "● No hay commits registrados hoy en '$repoName' para tu usuario." -ForegroundColor Yellow
