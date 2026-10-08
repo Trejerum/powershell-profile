@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # 15-NOTES: GESTOR DE NOTAS PERSONALES & DIARIO DEVELOPER
 # ==============================================================================
 # Automatiza el flujo de notas diarias en Neovim ($HOME\Documentos\Notes),
@@ -470,7 +470,7 @@ function Get-NoteTasks {
     }
 
     $results = @()
-    $taskRegex = '^\s*[-*]\s*\[([ xX>~])\]\s*(.*)$'
+    $taskRegex = '^\s*[-*]\s*\[([ xX>~-])\]\s*(.*)$'
 
     foreach ($file in $query) {
         $lines = [System.IO.File]::ReadAllLines($file.FullName, [System.Text.Encoding]::UTF8)
@@ -481,8 +481,9 @@ function Get-NoteTasks {
                 $desc = $matches[2].Trim()
                 $isDone = ($marker -match '[xX]')
                 $isMoved = ($marker -eq '>')
+                $isSkipped = ($marker -in @('-', '~'))
 
-                if ($IncludeDone -or (-not $isDone -and -not $isMoved)) {
+                if ($IncludeDone -or (-not $isDone -and -not $isMoved -and -not $isSkipped)) {
                     $results += [PSCustomObject]@{
                         File       = $file.FullName
                         FileName   = $file.Name
@@ -490,6 +491,8 @@ function Get-NoteTasks {
                         LineNumber = ($i + 1)
                         Done       = $isDone
                         Moved      = $isMoved
+                        Skipped    = $isSkipped
+                        Marker     = $marker
                         Text       = $desc
                         RawLine    = $line
                     }
@@ -510,10 +513,12 @@ function todo {
         todo "Revisar stock en pre"         # Añade una nueva tarea a la nota de hoy
         todo -Today                         # Solo tareas de hoy
         todo -Done                          # Muestra también completadas (- [x])
+        todo -All                           # Muestra todas (completadas, migradas [>] y omitidas [-])
         todo -Days 14                       # Revisa notas de los últimos 14 días
         todo -Open 2                        # Abre Neovim en la línea exacta de la tarea 2
-        todo -Check 2                       # Marca la tarea 2 como hecha en el archivo markdown
-        todo -Uncheck 2                     # Desmarca la tarea 2
+        todo -Check 2                       # Marca la tarea 2 como hecha (- [x])
+        todo -Skip 2                        # Marca la tarea 2 como omitida/descartada (- [-])
+        todo -Uncheck 2                     # Desmarca la tarea 2 como pendiente (- [ ])
     #>
     [CmdletBinding(DefaultParameterSetName = 'List')]
     param(
@@ -538,6 +543,10 @@ function todo {
         [Parameter(ParameterSetName = 'Check')]
         [int]$Check,
 
+        [Parameter(ParameterSetName = 'Skip')]
+        [Alias('Omit')]
+        [int]$Skip,
+
         [Parameter(ParameterSetName = 'Uncheck')]
         [int]$Uncheck
     )
@@ -561,7 +570,7 @@ function todo {
     }
 
     # Obtener tareas según contexto
-    $includeCompleted = ($Done -or $All -or $Uncheck -or $Open)
+    $includeCompleted = ($Done -or $All -or $Uncheck -or $Open -or $Skip)
     $scannedDays = if ($All) { 0 } else { $Days }
     $tasks = @(Get-NoteTasks -Days $scannedDays -IncludeDone:$includeCompleted -TodayOnly:$Today)
 
@@ -584,15 +593,15 @@ function todo {
             $t = $tasks[$Check - 1]
             $fileLines = [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
             $idx = $t.LineNumber - 1
-            if ($fileLines[$idx] -match '^\s*[-*]\s*\[ \]') {
-                $fileLines[$idx] = $fileLines[$idx] -replace '^\s*[-*]\s*\[ \]', '- [x]'
+            if ($fileLines[$idx] -match '^\s*[-*]\s*\[([ xX>~-])\]') {
+                $fileLines[$idx] = $fileLines[$idx] -replace '^\s*[-*]\s*\[([ xX>~-])\]', '- [x]'
                 $crlfContent = ($fileLines -join "`r`n") + "`r`n"
                 $utf8Bom = New-Object System.Text.UTF8Encoding($true)
                 [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
                 Write-Host "✓ Tarea [$Check] marcada como COMPLETADA en $($t.FileName):" -ForegroundColor Green
                 Write-Host "  $($t.Text)" -ForegroundColor White
             } else {
-                Write-Host "ℹ La tarea ya estaba completada o modificada en $($t.FileName)." -ForegroundColor Yellow
+                Write-Host "ℹ La tarea no tenía un formato reconocible en $($t.FileName)." -ForegroundColor Yellow
             }
             return
         } else {
@@ -601,21 +610,44 @@ function todo {
         }
     }
 
-    # Caso 4: Desmarcar tarea (-Uncheck)
+    # Caso 4: Marcar tarea como omitida/descartada (-Skip / -Omit)
+    if ($Skip) {
+        if ($Skip -ge 1 -and $Skip -le $tasks.Count) {
+            $t = $tasks[$Skip - 1]
+            $fileLines = [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
+            $idx = $t.LineNumber - 1
+            if ($fileLines[$idx] -match '^\s*[-*]\s*\[([ xX>~-])\]') {
+                $fileLines[$idx] = $fileLines[$idx] -replace '^\s*[-*]\s*\[([ xX>~-])\]', '- [-]'
+                $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+                $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+                [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+                Write-Host "✓ Tarea [$Skip] marcada como OMITIDA [-] en $($t.FileName):" -ForegroundColor DarkYellow
+                Write-Host "  $($t.Text)" -ForegroundColor DarkGray
+            } else {
+                Write-Host "ℹ La tarea no tenía un formato reconocible en $($t.FileName)." -ForegroundColor Yellow
+            }
+            return
+        } else {
+            Write-Error "Índice $Skip fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Caso 5: Desmarcar tarea (-Uncheck)
     if ($Uncheck) {
         if ($Uncheck -ge 1 -and $Uncheck -le $tasks.Count) {
             $t = $tasks[$Uncheck - 1]
             $fileLines = [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
             $idx = $t.LineNumber - 1
-            if ($fileLines[$idx] -match '^\s*[-*]\s*\[[xX]\]') {
-                $fileLines[$idx] = $fileLines[$idx] -replace '^\s*[-*]\s*\[[xX]\]', '- [ ]'
+            if ($fileLines[$idx] -match '^\s*[-*]\s*\[([ xX>~-])\]') {
+                $fileLines[$idx] = $fileLines[$idx] -replace '^\s*[-*]\s*\[([ xX>~-])\]', '- [ ]'
                 $crlfContent = ($fileLines -join "`r`n") + "`r`n"
                 $utf8Bom = New-Object System.Text.UTF8Encoding($true)
                 [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
-                Write-Host "✓ Tarea [$Uncheck] desmarcada como PENDIENTE en $($t.FileName):" -ForegroundColor Cyan
+                Write-Host "✓ Tarea [$Uncheck] reactivada como PENDIENTE [ ] en $($t.FileName):" -ForegroundColor Cyan
                 Write-Host "  $($t.Text)" -ForegroundColor White
             } else {
-                Write-Host "ℹ La tarea no estaba marcada como completada en $($t.FileName)." -ForegroundColor Yellow
+                Write-Host "ℹ La tarea no tenía un formato reconocible en $($t.FileName)." -ForegroundColor Yellow
             }
             return
         } else {
@@ -624,7 +656,7 @@ function todo {
         }
     }
 
-    # Caso 5: Listar tareas en pantalla
+    # Caso 6: Listar tareas en pantalla
     if ($tasks.Count -eq 0) {
         Write-Host "`n✓ No hay tareas pendientes en las notas recientes. ¡Todo al día!`n" -ForegroundColor Green
         return
@@ -649,13 +681,32 @@ function todo {
         Write-Host " [$dateStr ($relLabel)]" -ForegroundColor Yellow
         foreach ($item in $g.Group) {
             $numTag = "  [$taskIdx]".PadRight(8)
-            $box = if ($item.Done) { "[x]" } else { "[ ]" }
-            $boxColor = if ($item.Done) { "Green" } else { "Cyan" }
-            $textColor = if ($item.Done) { "DarkGray" } else { "White" }
+            $box = switch ($item.Marker) {
+                'x' { "[x]" }
+                'X' { "[x]" }
+                '>' { "[>]" }
+                '-' { "[-]" }
+                '~' { "[-]" }
+                default { "[ ]" }
+            }
+            $boxColor = switch ($item.Marker) {
+                'x' { "Green" }
+                'X' { "Green" }
+                '>' { "Magenta" }
+                '-' { "DarkYellow" }
+                '~' { "DarkYellow" }
+                default { "Cyan" }
+            }
+            $textColor = if ($item.Done -or $item.Moved -or $item.Skipped) { "DarkGray" } else { "White" }
 
             Write-Host $numTag -ForegroundColor DarkGray -NoNewline
             Write-Host "$box " -ForegroundColor $boxColor -NoNewline
             Write-Host "$($item.Text)" -ForegroundColor $textColor -NoNewline
+            if ($item.Moved) {
+                Write-Host " (Migrada)" -ForegroundColor Magenta -NoNewline
+            } elseif ($item.Skipped) {
+                Write-Host " (Omitida)" -ForegroundColor DarkYellow -NoNewline
+            }
             Write-Host " (L:$($item.LineNumber))" -ForegroundColor DarkGray
 
             $taskIdx++
@@ -663,15 +714,23 @@ function todo {
         Write-Host ""
     }
 
-    $pendingCount = @($tasks | Where-Object { -not $_.Done }).Count
+    $pendingCount = @($tasks | Where-Object { -not $_.Done -and -not $_.Moved -and -not $_.Skipped }).Count
     $doneCount = @($tasks | Where-Object { $_.Done }).Count
+    $movedCount = @($tasks | Where-Object { $_.Moved }).Count
+    $skippedCount = @($tasks | Where-Object { $_.Skipped }).Count
 
     Write-Host "Total: $pendingCount pendiente(s)" -NoNewline -ForegroundColor White
     if ($doneCount -gt 0) {
-        Write-Host ", $doneCount completada(s)" -NoNewline -ForegroundColor DarkGray
+        Write-Host ", $doneCount completada(s)" -NoNewline -ForegroundColor Green
+    }
+    if ($movedCount -gt 0) {
+        Write-Host ", $movedCount migrada(s)" -NoNewline -ForegroundColor Magenta
+    }
+    if ($skippedCount -gt 0) {
+        Write-Host ", $skippedCount omitida(s)" -NoNewline -ForegroundColor DarkYellow
     }
     Write-Host "."
-    Write-Host "Tip: Usa 'todo -Check <n>' para tachar, 'todo -Open <n>' para abrir en Neovim o 'note-roll' para traspasar pendientes a hoy.`n" -ForegroundColor DarkGray
+    Write-Host "Tip: Usa 'todo -Check <n>' para tachar, 'todo -Skip <n>' para omitir o 'note-roll' para migrar pendientes a hoy.`n" -ForegroundColor DarkGray
 }
 Set-Alias todos todo
 Set-Alias tasks todo
@@ -682,11 +741,11 @@ Set-Alias tasks todo
 function note-roll {
     <#
     .SYNOPSIS
-        Traspasa automáticamente las tareas no completadas (- [ ]) del día anterior a la nota de hoy.
+        Traspasa automáticamente las tareas pendientes (- [ ]) del día anterior a hoy y las marca como migradas (- [>]).
     .EXAMPLE
         note-roll
         note-roll -DaysAgo 2
-        note-roll -MarkMoved
+        note-roll -KeepUnmarked
     #>
     [CmdletBinding()]
     param(
@@ -694,7 +753,7 @@ function note-roll {
         [int]$DaysAgo = 0,
 
         [Parameter()]
-        [switch]$MarkMoved
+        [switch]$KeepUnmarked   # No marcar como migrado [>] en la nota previa
     )
 
     $notesDir = $global:NotesDir
@@ -747,29 +806,29 @@ function note-roll {
 
     # Filtrar las tareas que ya estén traspasadas a hoy para evitar duplicados
     $toAdd = @()
-    foreach ($task in $pendingTasks) {
+    $indicesMigrated = @()
+    for ($k = 0; $k -lt $pendingTasks.Count; $k++) {
+        $task = $pendingTasks[$k]
         if (-not ($todayContent.Contains($task))) {
             $toAdd += "- [ ] $task"
         }
+        $indicesMigrated += $pendingIndices[$k]
     }
 
-    if ($toAdd.Count -eq 0) {
-        Write-Host "ℹ Todas las tareas pendientes de $prevStr.md ya estaban presentes en $todayStr.md." -ForegroundColor Yellow
-        return
+    if ($toAdd.Count -gt 0) {
+        # Agregar encabezado de sección en hoy
+        $appendLines = @()
+        $appendLines += ""
+        $appendLines += "## Migradas de $prevStr"
+        $appendLines += $toAdd
+
+        $crlfToAppend = ($appendLines -join "`r`n") + "`r`n"
+        [System.IO.File]::AppendAllText($todayFile, $crlfToAppend, [System.Text.Encoding]::UTF8)
     }
 
-    # Agregar encabezado de sección en hoy si no existe
-    $appendLines = @()
-    $appendLines += ""
-    $appendLines += "## Pendientes de $prevStr"
-    $appendLines += $toAdd
-
-    $crlfToAppend = ($appendLines -join "`r`n") + "`r`n"
-    [System.IO.File]::AppendAllText($todayFile, $crlfToAppend, [System.Text.Encoding]::UTF8)
-
-    # Si se pide marcar en el origen (-MarkMoved)
-    if ($MarkMoved) {
-        foreach ($idx in $pendingIndices) {
+    # Marcar por defecto en el origen como migrado (- [>]) salvo que se especifique -KeepUnmarked
+    if (-not $KeepUnmarked -and $indicesMigrated.Count -gt 0) {
+        foreach ($idx in $indicesMigrated) {
             $prevLines[$idx] = $prevLines[$idx] -replace '^\s*[-*]\s*\[ \]', '- [>]'
         }
         $crlfPrev = ($prevLines -join "`r`n") + "`r`n"
@@ -777,9 +836,13 @@ function note-roll {
         [System.IO.File]::WriteAllText($prevFile.FullName, $crlfPrev, $utf8Bom)
     }
 
-    Write-Host "✓ $($toAdd.Count) tarea(s) pendiente(s) de $prevStr.md traspasadas a $todayStr.md:" -ForegroundColor Green
-    foreach ($item in $toAdd) {
-        Write-Host "  • $($item -replace '^-\s*\[ \]\s*', '')" -ForegroundColor White
+    if ($toAdd.Count -gt 0) {
+        Write-Host "✓ $($toAdd.Count) tarea(s) migrada(s) de $prevStr.md a $todayStr.md (marcadas como [>] en $prevStr.md):" -ForegroundColor Green
+        foreach ($item in $toAdd) {
+            Write-Host "  → $($item -replace '^-\s*\[ \]\s*', '')" -ForegroundColor White
+        }
+    } else {
+        Write-Host "ℹ Las tareas pendientes de $prevStr.md ya estaban en $todayStr.md (se marcaron como [>] en $prevStr.md)." -ForegroundColor Yellow
     }
 }
 Set-Alias note-rollover note-roll
