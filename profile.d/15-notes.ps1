@@ -483,18 +483,28 @@ function Get-NoteTasks {
                 $isMoved = ($marker -eq '>')
                 $isSkipped = ($marker -in @('-', '~'))
 
+                # Recolectar líneas hijas / apuntes identados de esta tarea
+                $subNotes = @()
+                $j = $i + 1
+                while ($j -lt $lines.Count -and ($lines[$j] -match '^\s{2,}\S' -or $lines[$j] -match '^\t+\S')) {
+                    $subNotes += $lines[$j].Trim()
+                    $j++
+                }
+
                 if ($IncludeDone -or (-not $isDone -and -not $isMoved -and -not $isSkipped)) {
                     $results += [PSCustomObject]@{
-                        File       = $file.FullName
-                        FileName   = $file.Name
-                        BaseName   = $file.BaseName
-                        LineNumber = ($i + 1)
-                        Done       = $isDone
-                        Moved      = $isMoved
-                        Skipped    = $isSkipped
-                        Marker     = $marker
-                        Text       = $desc
-                        RawLine    = $line
+                        File           = $file.FullName
+                        FileName       = $file.Name
+                        BaseName       = $file.BaseName
+                        LineNumber     = ($i + 1)
+                        LastLineNumber = $j
+                        Done           = $isDone
+                        Moved          = $isMoved
+                        Skipped        = $isSkipped
+                        Marker         = $marker
+                        Text           = $desc
+                        SubNotes       = $subNotes
+                        RawLine        = $line
                     }
                 }
             }
@@ -511,6 +521,8 @@ function todo {
     .EXAMPLE
         todo                                # Lista tareas pendientes de los últimos 7 días
         todo "Revisar stock en pre"         # Añade una nueva tarea a la nota de hoy
+        todo -Note 6 "Dedicadas 3h a test"  # Añade apunte identado a la tarea 6
+        todo -Note 6                        # Pide el apunte de forma interactiva
         todo -Today                         # Solo tareas de hoy
         todo -Done                          # Muestra también completadas (- [x])
         todo -All                           # Muestra todas (completadas, migradas [>] y omitidas [-])
@@ -548,7 +560,14 @@ function todo {
         [int]$Skip,
 
         [Parameter(ParameterSetName = 'Uncheck')]
-        [int]$Uncheck
+        [int]$Uncheck,
+
+        [Parameter(ParameterSetName = 'Note', Mandatory = $true, Position = 0)]
+        [Alias('Comment', 'Apunte')]
+        [int]$Note,
+
+        [Parameter(ParameterSetName = 'Note', Position = 1)]
+        [string]$Text
     )
 
     $notesDir = $global:NotesDir
@@ -569,8 +588,12 @@ function todo {
         return
     }
 
-    # Obtener tareas según contexto
-    $includeCompleted = ($Done -or $All -or $Uncheck -or $Open -or $Skip)
+    # Obtener tareas según contexto:
+    # Si se pasa -All o -Done, se incluyen completadas/migradas/omitidas.
+    # Para -Uncheck se requiere incluir completadas para poder reactivarlas.
+    # Para -Note, -Check, -Skip, -Open, por defecto se mapea sobre las tareas pendientes
+    # que el usuario ve habitualmente al llamar a 'todo', a menos que se use -All o -Done.
+    $includeCompleted = ($Done -or $All -or $Uncheck)
     $scannedDays = if ($All) { 0 } else { $Days }
     $tasks = @(Get-NoteTasks -Days $scannedDays -IncludeDone:$includeCompleted -TodayOnly:$Today)
 
@@ -656,7 +679,46 @@ function todo {
         }
     }
 
-    # Caso 6: Listar tareas en pantalla
+    # Caso 6: Añadir apunte / comentario a una tarea (-Note / -Comment / -Apunte)
+    if ($Note) {
+        if ($Note -ge 1 -and $Note -le $tasks.Count) {
+            $t = $tasks[$Note - 1]
+            if ([string]::IsNullOrWhiteSpace($Text)) {
+                Write-Host "`n● Añadir apunte a tarea [$Note] en $($t.FileName):" -ForegroundColor Cyan
+                Write-Host "  Tarea: $($t.Text)" -ForegroundColor White
+                $Text = Read-Host "  Texto del apunte"
+            }
+            if ([string]::IsNullOrWhiteSpace($Text)) {
+                Write-Host "ℹ No se añadió ningún apunte (texto vacío)." -ForegroundColor Yellow
+                return
+            }
+
+            $timeStr = Get-Date -Format 'HH:mm'
+            $cleanText = $Text.Trim()
+            $formattedNote = if ($cleanText -match '^\s*\[\d{2}:\d{2}\]') { $cleanText } else { "[$timeStr] $cleanText" }
+            $indentedLine = "    $formattedNote"
+
+            $fileLines = [System.Collections.Generic.List[string]]::new(
+                [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
+            )
+            $insertIdx = $t.LastLineNumber
+            $fileLines.Insert($insertIdx, $indentedLine)
+
+            $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+            $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+            [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+
+            Write-Host "`n✓ Apunte añadido a la tarea [$Note] en $($t.FileName):" -ForegroundColor Green
+            Write-Host "  [$Note] $($t.Text)" -ForegroundColor DarkGray
+            Write-Host "      ↳ $formattedNote`n" -ForegroundColor White
+            return
+        } else {
+            Write-Error "Índice $Note fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Caso 7: Listar tareas en pantalla
     if ($tasks.Count -eq 0) {
         Write-Host "`n✓ No hay tareas pendientes en las notas recientes. ¡Todo al día!`n" -ForegroundColor Green
         return
@@ -709,6 +771,12 @@ function todo {
             }
             Write-Host " (L:$($item.LineNumber))" -ForegroundColor DarkGray
 
+            if ($item.SubNotes -and $item.SubNotes.Count -gt 0) {
+                foreach ($sn in $item.SubNotes) {
+                    Write-Host "            ↳ $sn" -ForegroundColor DarkGray
+                }
+            }
+
             $taskIdx++
         }
         Write-Host ""
@@ -730,7 +798,7 @@ function todo {
         Write-Host ", $skippedCount omitida(s)" -NoNewline -ForegroundColor DarkYellow
     }
     Write-Host "."
-    Write-Host "Tip: Usa 'todo -Check <n>' para tachar, 'todo -Skip <n>' para omitir o 'note-roll' para migrar pendientes a hoy.`n" -ForegroundColor DarkGray
+    Write-Host "Tip: Usa 'todo -Note <n> <texto>' para apuntes, '-Check <n>' para tachar o 'note-roll' para migrar.`n" -ForegroundColor DarkGray
 }
 Set-Alias todos todo
 Set-Alias tasks todo
