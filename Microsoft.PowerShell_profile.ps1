@@ -11,6 +11,7 @@
 #   profile.d/25-ai.ps1          - Asistente IA (Gemini / Antigravity CLI), gai, ask-cmd
 #   profile.d/26-codex.ps1       - Integración OpenAI Codex CLI y sesiones VS Code (cx, cxchats, cxresume)
 #   profile.d/30-sql.ps1         - ADO.NET SQL Toolkit, q, sesiones y autocompletado
+#   profile.d/35-bluemine.ps1    - Bluemine/Redmine, tickets, cronómetro e imputación de horas
 #   profile.d/40-utils.ps1       - Herramientas de sistema, red, procesos e historial
 #   profile.d/50-help.ps1        - Centro de mando interactivo (phelp, ?p)
 #   profile.d/99-prompt.ps1      - Prompt interactivo (estado Git + SQL Server)

@@ -567,7 +567,25 @@ function todo {
         [int]$Note,
 
         [Parameter(ParameterSetName = 'Note', Position = 1)]
-        [string]$Text
+        [string]$Text,
+
+        [Parameter(ParameterSetName = 'Start')]
+        [int]$Start,
+
+        [Parameter(ParameterSetName = 'Stop')]
+        [switch]$Stop,
+
+        [Parameter(ParameterSetName = 'Status')]
+        [switch]$Status,
+
+        [Parameter(ParameterSetName = 'Log', Mandatory = $true, Position = 0)]
+        [int]$Log,
+
+        [Parameter(ParameterSetName = 'Log', Mandatory = $true, Position = 1)]
+        [double]$Hours,
+
+        [Parameter(ParameterSetName = 'Log', Position = 2)]
+        [string]$LogComment
     )
 
     $notesDir = $global:NotesDir
@@ -718,7 +736,65 @@ function todo {
         }
     }
 
-    # Caso 7: Listar tareas en pantalla
+    # Caso 7: Cronómetro - Iniciar (-Start)
+    if ($Start) {
+        if (Get-Command task-start -ErrorAction SilentlyContinue) {
+            task-start -Task $Start
+        } else {
+            Write-Error "El módulo de cronómetro no está cargado."
+        }
+        return
+    }
+
+    # Caso 8: Cronómetro - Detener (-Stop)
+    if ($Stop) {
+        if (Get-Command task-stop -ErrorAction SilentlyContinue) {
+            task-stop
+        } else {
+            Write-Error "El módulo de cronómetro no está cargado."
+        }
+        return
+    }
+
+    # Caso 9: Cronómetro - Estado (-Status)
+    if ($Status) {
+        if (Get-Command task-status -ErrorAction SilentlyContinue) {
+            task-status
+        } else {
+            Write-Error "El módulo de cronómetro no está cargado."
+        }
+        return
+    }
+
+    # Caso 10: Imputar horas directamente (-Log)
+    if ($Log) {
+        if ($Log -ge 1 -and $Log -le $tasks.Count) {
+            $t = $tasks[$Log - 1]
+            $timeStr = (Get-Date).ToString('HH:mm')
+            $commentText = if ($LogComment) { " | " + $LogComment.Trim() } else { "" }
+            $formattedLine = "    [$timeStr] ${Hours}h$commentText"
+
+            $fileLines = [System.Collections.Generic.List[string]]::new(
+                [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
+            )
+            $insertIdx = $t.LastLineNumber
+            $fileLines.Insert($insertIdx, $formattedLine)
+
+            $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+            $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+            [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+
+            Write-Host "`n✓ Registradas ${Hours}h en la tarea [$Log] en $($t.FileName):" -ForegroundColor Green
+            Write-Host "  [$Log] $($t.Text)" -ForegroundColor DarkGray
+            Write-Host "      ↳ $formattedLine`n" -ForegroundColor White
+            return
+        } else {
+            Write-Error "Índice $Log fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Caso 11: Listar tareas en pantalla
     if ($tasks.Count -eq 0) {
         Write-Host "`n✓ No hay tareas pendientes en las notas recientes. ¡Todo al día!`n" -ForegroundColor Green
         return
@@ -737,6 +813,15 @@ function todo {
 
     $groups = $tasks | Group-Object BaseName
     $taskIdx = 1
+
+    # Comprobar si hay un cronómetro activo corriendo
+    $activeTimer = $null
+    if (Test-Path -LiteralPath $global:ActiveTimerFile) {
+        try {
+            $jsonTimer = [System.IO.File]::ReadAllText($global:ActiveTimerFile, [System.Text.Encoding]::UTF8)
+            $activeTimer = $jsonTimer | ConvertFrom-Json
+        } catch { }
+    }
 
     foreach ($g in $groups) {
         $dateStr = $g.Name
@@ -772,6 +857,12 @@ function todo {
             Write-Host $numTag -ForegroundColor DarkGray -NoNewline
             Write-Host "$box " -ForegroundColor $boxColor -NoNewline
             Write-Host "$($item.Text)" -ForegroundColor $textColor -NoNewline
+
+            # Indicador de cronómetro activo
+            if ($activeTimer -and $activeTimer.TaskText -eq $item.Text) {
+                Write-Host " ⏱ [EN CURSO]" -ForegroundColor Green -NoNewline
+            }
+
             if ($item.Moved) {
                 Write-Host " (Migrada)" -ForegroundColor Magenta -NoNewline
             } elseif ($item.Skipped) {
@@ -806,7 +897,7 @@ function todo {
         Write-Host ", $skippedCount omitida(s)" -NoNewline -ForegroundColor DarkYellow
     }
     Write-Host "."
-    Write-Host "Tip: Usa 'todo -Note <n> <texto>' para apuntes, '-Check <n>' para tachar o 'note-roll' para migrar.`n" -ForegroundColor DarkGray
+    Write-Host "Tip: Usa 'todo -Start <n>' para cronometrar, 'todo -Log <n> <h>' para imputar o 'hours' para balance.`n" -ForegroundColor DarkGray
 }
 Set-Alias todos todo
 Set-Alias tasks todo
