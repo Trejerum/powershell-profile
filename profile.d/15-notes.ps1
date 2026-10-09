@@ -594,7 +594,7 @@ function todo {
     # Para -Note, -Check, -Skip, -Open, por defecto se mapea sobre las tareas pendientes
     # que el usuario ve habitualmente al llamar a 'todo', a menos que se use -All o -Done.
     $includeCompleted = ($Done -or $All -or $Uncheck)
-    $scannedDays = if ($All) { 0 } else { $Days }
+    $scannedDays = if ($PSBoundParameters.ContainsKey('Days')) { $Days } elseif ($All) { 0 } else { $Days }
     $tasks = @(Get-NoteTasks -Days $scannedDays -IncludeDone:$includeCompleted -TodayOnly:$Today)
 
     # Caso 2: Abrir en Neovim
@@ -724,7 +724,15 @@ function todo {
         return
     }
 
-    $titleFilter = if ($Today) { "Hoy" } elseif ($All) { "Historial completo" } else { "Últimos $Days días" }
+    $titleFilter = if ($Today) {
+        if ($All) { "Hoy - Todos los estados" } else { "Hoy" }
+    } elseif ($PSBoundParameters.ContainsKey('Days')) {
+        if ($All) { "Últimos $Days días - Todos los estados" } else { "Últimos $Days días" }
+    } elseif ($All) {
+        "Historial completo"
+    } else {
+        "Últimos $Days días"
+    }
     Write-Host "`n=== Tareas en Notas ($titleFilter) ===`n" -ForegroundColor DarkCyan
 
     $groups = $tasks | Group-Object BaseName
