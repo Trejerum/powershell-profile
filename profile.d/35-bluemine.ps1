@@ -9,6 +9,9 @@
 # - Volcado rápido al portapapeles listo para la web de Bluemine (hours -Clip)
 # ==============================================================================
 
+if (-not $global:NotesDir) {
+    $global:NotesDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "Notes"
+}
 $global:BluemineCsvPath   = Join-Path $global:NotesDir "bluemine.csv"
 $global:ActiveTimerFile   = Join-Path $HOME ".active_task_timer.json"
 
