@@ -12,6 +12,7 @@
 if (-not $global:NotesDir) {
     $global:NotesDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "Notes"
 }
+$global:BluemineBaseUrl   = "https://bluemine.pkf-attest.es"
 $global:BluemineCsvPath   = Join-Path $global:NotesDir "bluemine.csv"
 $global:ActiveTimerFile   = Join-Path $HOME ".active_task_timer.json"
 
@@ -179,6 +180,8 @@ function bm {
         bm                          # Lista tareas activas ordenadas por prioridad
         bm rendimiento              # Busca por texto en asunto o código SGA
         bm 1                        # Añade la tarea #1 a la nota diaria de hoy
+        bm 1 -Open                  # Abre la tarea #1 en el navegador
+        bm 1 -Time                  # Abre el formulario de imputación de la tarea #1
         bm -Add 221074              # Añade directamente por número de ticket
         bm -All                     # Muestra también tareas cerradas
     #>
@@ -191,7 +194,14 @@ function bm {
         [string]$Add,
 
         [Parameter()]
-        [switch]$All
+        [switch]$All,
+
+        [Parameter()]
+        [switch]$Open,
+
+        [Parameter()]
+        [Alias('Log')]
+        [switch]$Time
     )
 
     # Auto-detección silenciosa si hay un issues*.csv más reciente en Descargas
@@ -228,6 +238,30 @@ function bm {
         }
     } elseif ($Filter -match '^\d{5,7}$') {
         $targetToAdd = $Filter
+    }
+
+    # Si se solicitó abrir en navegador (-Open o -Time)
+    if ($Open -or $Time) {
+        if (-not $targetToAdd -and $Filter) {
+            $matching = @($displayed | Where-Object { $_.Subject -like "*$Filter*" -or $_.Code -like "*$Filter*" })
+            if ($matching.Count -eq 1) {
+                $targetToAdd = $matching[0].Id
+            }
+        }
+        if (-not $targetToAdd) {
+            Write-Error "Especifica el número de tarea o ID de ticket a abrir (ej. 'bm 1 -Open', 'bm 198463 -Time')."
+            return
+        }
+
+        $url = if ($Time) {
+            "$($global:BluemineBaseUrl)/issues/$targetToAdd/time_entries/new"
+        } else {
+            "$($global:BluemineBaseUrl)/issues/$targetToAdd"
+        }
+        Start-Process $url
+        $actionName = if ($Time) { "formulario de imputación" } else { "ticket" }
+        Write-Host "✓ Abriendo $actionName para #$targetToAdd en Bluemine ($url)..." -ForegroundColor Green
+        return
     }
 
     if ($targetToAdd) {
@@ -327,7 +361,7 @@ function bm {
     }
 
     Write-Host ""
-    Write-Host "Tip: Usa 'bm <n>' para añadir una tarea a hoy, o 'todo -Start <n>' para arrancar cronómetro.`n" -ForegroundColor DarkGray
+    Write-Host "Tip: 'bm <n>' añade a hoy | 'bm <n> -Open' abre ticket | 'bm <n> -Time' abre imputación web.`n" -ForegroundColor DarkGray
 }
 Set-Alias tickets bm
 Set-Alias bluemine bm
@@ -521,6 +555,8 @@ function hours {
     .EXAMPLE
         hours                       # Muestra el balance de la jornada de hoy
         hours -Fill                 # Auto-cuadra las horas restantes para clavar la jornada
+        hours -Step                 # Asistente interactivo guiado para imputar ticket a ticket en la web
+        hours -Open                 # Abre el formulario de imputación de cada ticket de hoy en el navegador
         hours -Clip                 # Copia el resumen tabulado al portapapeles para Bluemine
         hours -Days 5               # Muestra el resumen de los últimos 5 días
     #>
@@ -533,7 +569,13 @@ function hours {
         [Alias('Auto')]
         [switch]$AutoFill,
 
-        [switch]$Clip
+        [switch]$Clip,
+
+        [switch]$Step,
+
+        [switch]$Open,
+        [Alias('Web')]
+        [switch]$OpenWeb
     )
 
     $notesDir = $global:NotesDir
@@ -798,9 +840,10 @@ function hours {
     if ($totalLogged -lt $targetToday) {
         $faltan = [math]::Round($targetToday - $totalLogged, 2)
         Write-Host "  Faltan: $faltan h para completar la jornada diaria." -ForegroundColor Yellow
-        Write-Host "  Tip: Usa 'hours -Fill' para cuadrar automáticamente las horas restantes." -ForegroundColor DarkGray
+        Write-Host "  Tip: Usa 'hours -Fill' para auto-cuadrar o 'hours -Step' para imputar en web." -ForegroundColor DarkGray
     } elseif ($totalLogged -eq $targetToday) {
         Write-Host "  ✓ ¡Jornada diaria completada al 100% exacto!" -ForegroundColor Green
+        Write-Host "  Tip: Usa 'hours -Step' para abrir la web e imputar ticket a ticket de forma guiada." -ForegroundColor DarkGray
     } else {
         $extra = [math]::Round($totalLogged - $targetToday, 2)
         Write-Host "  ℹ +$extra h por encima del objetivo de hoy." -ForegroundColor Cyan
@@ -812,6 +855,92 @@ function hours {
         $tsvContent = $tsvLines -join "`r`n"
         Set-Clipboard -Value $tsvContent
         Write-Host "✓ Resumen copiado al portapapeles en formato TSV/Excel listo para Bluemine.`n" -ForegroundColor Green
+    }
+
+    # Filtrar solo grupos que correspondan a tickets reales (#\d+)
+    $validGroups = @($grouped | Where-Object { $_.Name -match '^#\d+$' })
+
+    # Abrir todos los tickets de hoy en el navegador si se pidió -Open o -Web
+    if ($Open -or $OpenWeb) {
+        if ($validGroups.Count -eq 0) {
+            Write-Host "ℹ No hay tickets identificados con #ID en la nota de hoy para abrir en la web." -ForegroundColor Yellow
+        } else {
+            Write-Host "✓ Abriendo formularios de imputación en Bluemine para $($validGroups.Count) ticket(s)..." -ForegroundColor Green
+            foreach ($g in $validGroups) {
+                $tId = $g.Name.TrimStart('#')
+                $url = "$($global:BluemineBaseUrl)/issues/$tId/time_entries/new"
+                Start-Process $url
+            }
+        }
+    }
+
+    # Asistente guiado paso a paso (-Step)
+    if ($Step) {
+        if ($validGroups.Count -eq 0) {
+            Write-Host "ℹ No hay tickets identificados con #ID en la nota de hoy para imputar paso a paso." -ForegroundColor Yellow
+            return
+        }
+
+        Write-Host "=== Asistente de Imputación Web Paso a Paso ($($validGroups.Count) tickets) ===`n" -ForegroundColor DarkCyan
+        $stepIdx = 1
+        foreach ($g in $validGroups) {
+            $tId = $g.Name.TrimStart('#')
+            $bmInfo = if ($bmMap.ContainsKey($tId)) { $bmMap[$tId] } else { $null }
+            $code = if ($bmInfo -and $bmInfo.Code) { $bmInfo.Code } else { "-" }
+            $subject = if ($bmInfo -and $bmInfo.Subject) { $bmInfo.Subject } else { "(Tarea en nota)" }
+
+            $sumH = 0.0
+            $comments = @()
+            foreach ($e in $g.Group) {
+                $sumH += $e.Hours
+                if ($e.Comment) { $comments += $e.Comment }
+            }
+            $sumH = [math]::Round($sumH, 2)
+            $hoursComma = "$sumH".Replace('.', ',')
+            $commStr = if ($comments.Count -gt 0) { ($comments | Select-Object -Unique) -join "; " } else { $subject }
+
+            Write-Host "──────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+            Write-Host "  Paso [$stepIdx/$($validGroups.Count)] - Ticket #$tId " -NoNewline -ForegroundColor Cyan
+            if ($code -ne '-') {
+                Write-Host "[$code] " -NoNewline -ForegroundColor DarkYellow
+            }
+            Write-Host "--> $hoursComma h" -ForegroundColor Green
+            Write-Host "  Asunto:     " -NoNewline -ForegroundColor DarkGray
+            Write-Host "$subject" -ForegroundColor White
+            Write-Host "  Comentario: " -NoNewline -ForegroundColor DarkGray
+            Write-Host "$commStr" -ForegroundColor Cyan
+
+            # Abrir navegador en la pantalla de imputación del ticket
+            $url = "$($global:BluemineBaseUrl)/issues/$tId/time_entries/new"
+            Start-Process $url
+
+            # Por defecto copiar las horas al portapapeles
+            Set-Clipboard -Value $hoursComma
+            Write-Host "`n  ✓ Navegador abierto y horas ('$hoursComma') copiadas al portapapeles." -ForegroundColor Green
+            Write-Host "  [Enter: Siguiente | c: Copiar comentario | h: Copiar horas | q: Salir]: " -NoNewline -ForegroundColor DarkGray
+
+            $inStep = $true
+            while ($inStep) {
+                $key = [Console]::ReadKey($true)
+                if ($key.Key -eq 'Enter') {
+                    $inStep = $false
+                    Write-Host ""
+                } elseif ($key.KeyChar -eq 'c' -or $key.KeyChar -eq 'C') {
+                    Set-Clipboard -Value $commStr
+                    Write-Host "`n  ✓ Comentario copiado al portapapeles: '$commStr'" -ForegroundColor Yellow
+                    Write-Host "  [Enter: Siguiente | h: Copiar horas | q: Salir]: " -NoNewline -ForegroundColor DarkGray
+                } elseif ($key.KeyChar -eq 'h' -or $key.KeyChar -eq 'H') {
+                    Set-Clipboard -Value $hoursComma
+                    Write-Host "`n  ✓ Horas copiadas al portapapeles: '$hoursComma'" -ForegroundColor Yellow
+                    Write-Host "  [Enter: Siguiente | c: Copiar comentario | q: Salir]: " -NoNewline -ForegroundColor DarkGray
+                } elseif ($key.KeyChar -eq 'q' -or $key.KeyChar -eq 'Q') {
+                    Write-Host "`n● Asistente finalizado por el usuario.`n" -ForegroundColor DarkGray
+                    return
+                }
+            }
+            $stepIdx++
+        }
+        Write-Host "`n✓ ¡Todos los tickets de hoy han sido procesados!`n" -ForegroundColor Green
     }
 }
 Set-Alias timesheet hours
