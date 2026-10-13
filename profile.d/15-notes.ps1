@@ -521,6 +521,141 @@ function Get-NoteTasks {
     return $results
 }
 
+function Show-TaskHistoryChain {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$TaskItem,
+        [Parameter(Mandatory = $true)]
+        [string]$NotesDir
+    )
+
+    $currentFile = $TaskItem.File
+    $baseTask = $TaskItem.Text -replace '^\s*\[>[^\]]+\](\([^\)]+\))?\s*', '' -replace '^\s*\[>\s*\d{8}\]\s*', ''
+    $baseTask = ($baseTask -replace '^\s*\[P[0-9]\]\s*', '').Trim()
+
+    $chain = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $visited = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    # Añadir nodo de la nota actual
+    $chain.Add([PSCustomObject]@{
+        File       = $TaskItem.File
+        FileName   = $TaskItem.FileName
+        BaseName   = $TaskItem.BaseName
+        LineNumber = $TaskItem.LineNumber
+        Marker     = $TaskItem.Marker
+        RawLine    = $TaskItem.RawLine
+        SubNotes   = $TaskItem.SubNotes
+    })
+    $visited.Add($TaskItem.File) | Out-Null
+
+    # Recorrer la cadena de migración hacia atrás
+    $searchLine = $TaskItem.RawLine
+
+    while ($true) {
+        $prevFileName = $null
+        if ($searchLine -match '\(\s*([a-zA-Z0-9_\-]+\.md)\s*\)') {
+            $prevFileName = $matches[1]
+        } elseif ($searchLine -match '\[>\s*([0-9]{8})\b') {
+            $prevFileName = "$($matches[1]).md"
+        } elseif ($searchLine -match '\[\[([0-9]{8})\]\]') {
+            $prevFileName = "$($matches[1]).md"
+        }
+
+        if (-not $prevFileName) { break }
+
+        $prevPath = Join-Path $NotesDir $prevFileName
+        if (-not (Test-Path -LiteralPath $prevPath) -or $visited.Contains($prevPath)) { break }
+        $visited.Add($prevPath) | Out-Null
+
+        $prevLines = [System.IO.File]::ReadAllLines($prevPath, [System.Text.Encoding]::UTF8)
+        $foundIdx = -1
+        for ($k = 0; $k -lt $prevLines.Count; $k++) {
+            if ($prevLines[$k] -match '^\s*[-*]\s*\[([ xX>~-])\]' -and $prevLines[$k].Contains($baseTask)) {
+                $foundIdx = $k
+                break
+            }
+        }
+
+        if ($foundIdx -ge 0) {
+            $matchedLine = $prevLines[$foundIdx]
+            $matchedMarker = if ($matchedLine -match '^\s*[-*]\s*\[([ xX>~-])\]') { $matches[1] } else { ' ' }
+            $prevSubNotes = @()
+            $m = $foundIdx + 1
+            while ($m -lt $prevLines.Count -and ($prevLines[$m] -match '^\s{2,}\S' -or $prevLines[$m] -match '^\t+\S')) {
+                $prevSubNotes += $prevLines[$m].Trim()
+                $m++
+            }
+
+            $chain.Add([PSCustomObject]@{
+                File       = $prevPath
+                FileName   = $prevFileName
+                BaseName   = [System.IO.Path]::GetFileNameWithoutExtension($prevFileName)
+                LineNumber = ($foundIdx + 1)
+                Marker     = $matchedMarker
+                RawLine    = $matchedLine
+                SubNotes   = $prevSubNotes
+            })
+
+            $searchLine = $matchedLine
+        } else {
+            break
+        }
+    }
+
+    # Invertir para mostrar en orden cronológico (Origen -> Hoy)
+    $chrono = [System.Linq.Enumerable]::Reverse($chain)
+    $datesFlow = ($chrono | ForEach-Object { $_.BaseName }) -join " -> "
+
+    Write-Host "`n=== Hilo Histórico de Tarea ===" -ForegroundColor DarkCyan
+    Write-Host "Tarea:  " -NoNewline -ForegroundColor Cyan
+    Write-Host "$baseTask" -ForegroundColor White
+    Write-Host "Flujo:  " -NoNewline -ForegroundColor DarkGray
+    Write-Host "$datesFlow" -ForegroundColor Yellow
+    Write-Host "──────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $today = (Get-Date).Date
+    foreach ($node in $chrono) {
+        $fileDate = try { [DateTime]::ParseExact($node.BaseName, 'yyyyMMdd', [System.Globalization.CultureInfo]::InvariantCulture) } catch { $null }
+        $diffDays = if ($fileDate) { ($today - $fileDate.Date).Days } else { -1 }
+        $relLabel = switch ($diffDays) {
+            0 { "Hoy" }
+            1 { "Ayer" }
+            default { if ($diffDays -gt 1) { "Hace $diffDays días" } else { "" } }
+        }
+        $relText = if ($relLabel) { " ($relLabel)" } else { "" }
+
+        $box = switch ($node.Marker) {
+            'x' { "[x]"; break }
+            'X' { "[x]"; break }
+            '>' { "[>]"; break }
+            '-' { "[-]"; break }
+            '~' { "[-]"; break }
+            default { "[ ]" }
+        }
+        $boxColor = switch ($node.Marker) {
+            'x' { "Green"; break }
+            'X' { "Green"; break }
+            '>' { "Magenta"; break }
+            '-' { "DarkYellow"; break }
+            '~' { "DarkYellow"; break }
+            default { "Cyan" }
+        }
+
+        Write-Host "● $($node.BaseName)$relText " -NoNewline -ForegroundColor Yellow
+        Write-Host "$box " -NoNewline -ForegroundColor $boxColor
+        Write-Host "(Línea $($node.LineNumber) en $($node.FileName))" -ForegroundColor DarkGray
+
+        if ($node.SubNotes -and $node.SubNotes.Count -gt 0) {
+            foreach ($sn in $node.SubNotes) {
+                Write-Host "     ↳ $sn" -ForegroundColor White
+            }
+        } else {
+            Write-Host "     ↳ (Sin apuntes en esta fecha)" -ForegroundColor DarkGray
+        }
+        Write-Host ""
+    }
+}
+
 function todo {
     <#
     .SYNOPSIS
@@ -529,6 +664,7 @@ function todo {
         todo                                # Lista tareas pendientes de los últimos 7 días
         todo "Revisar stock en pre"         # Añade una nueva tarea a la nota de hoy
         todo -Note 6 "Dedicadas 3h a test"  # Añade apunte identado a la tarea 6
+        todo -History 2                     # Muestra todo el historial de apuntes y flujo de la tarea 2
         todo -Wizard                        # Asistente guiado para revisar/triar tareas pendientes una a una
         todo -Wizard -Today                 # Asistente guiado solo para las tareas de hoy
         todo-wizard                         # Alias directo del asistente
@@ -553,16 +689,32 @@ function todo {
 
         [Parameter(ParameterSetName = 'List')]
         [Parameter(ParameterSetName = 'Wizard')]
+        [Parameter(ParameterSetName = 'History')]
+        [Parameter(ParameterSetName = 'Open')]
+        [Parameter(ParameterSetName = 'Origin')]
+        [Parameter(ParameterSetName = 'Check')]
+        [Parameter(ParameterSetName = 'Skip')]
+        [Parameter(ParameterSetName = 'Uncheck')]
         [int]$Days = 7,
 
         [Parameter(ParameterSetName = 'List')]
         [Parameter(ParameterSetName = 'Wizard')]
+        [Parameter(ParameterSetName = 'History')]
+        [Parameter(ParameterSetName = 'Open')]
+        [Parameter(ParameterSetName = 'Origin')]
+        [Parameter(ParameterSetName = 'Check')]
+        [Parameter(ParameterSetName = 'Skip')]
+        [Parameter(ParameterSetName = 'Uncheck')]
         [switch]$Today,
 
         [Parameter(ParameterSetName = 'List')]
+        [Parameter(ParameterSetName = 'Wizard')]
+        [Parameter(ParameterSetName = 'History')]
         [switch]$Done,
 
         [Parameter(ParameterSetName = 'List')]
+        [Parameter(ParameterSetName = 'Wizard')]
+        [Parameter(ParameterSetName = 'History')]
         [switch]$All,
 
         [Parameter(ParameterSetName = 'List')]
@@ -594,6 +746,10 @@ function todo {
 
         [Parameter(ParameterSetName = 'Origin')]
         [int]$Origin,
+
+        [Parameter(ParameterSetName = 'History')]
+        [Alias('Thread')]
+        [int]$History,
 
         [Parameter(ParameterSetName = 'Check')]
         [int]$Check,
@@ -798,6 +954,18 @@ function todo {
             return
         } else {
             Write-Error "Índice $Origin fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Caso 2c: Ver historial completo y apuntes unificados de una tarea (-History / -Thread)
+    if ($History) {
+        if ($History -ge 1 -and $History -le $tasks.Count) {
+            $t = $tasks[$History - 1]
+            Show-TaskHistoryChain -TaskItem $t -NotesDir $notesDir
+            return
+        } else {
+            Write-Error "Índice $History fuera de rango (hay $($tasks.Count) tareas listadas)."
             return
         }
     }
@@ -1045,7 +1213,7 @@ function todo {
                 }
             }
 
-            Write-Host "`n  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | p: Prioridad | e: Neovim | g: Origen | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+            Write-Host "`n  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | p: Prioridad | h: Historial | e: Neovim | g: Origen | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
 
             $loop = $true
             while ($loop) {
@@ -1159,6 +1327,11 @@ function todo {
                         Write-Host "  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | e: Neovim | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
                     }
                 }
+                elseif ($key.KeyChar -eq 'h' -or $key.KeyChar -eq 'H') {
+                    Write-Host "Historial" -ForegroundColor Cyan
+                    Show-TaskHistoryChain -TaskItem $t -NotesDir $notesDir
+                    Write-Host "  ¿Estado tras revisar historial? [c: Hecha | o: Omitir | s/Enter: Siguiente | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+                }
                 elseif ($key.KeyChar -eq 'q' -or $key.KeyChar -eq 'Q' -or $key.Key -eq 'Escape') {
                     Write-Host "Salir" -ForegroundColor Yellow
                     Write-Host "`n● Asistente finalizado por el usuario." -ForegroundColor Yellow
@@ -1224,19 +1397,19 @@ function todo {
         foreach ($item in $g.Group) {
             $numTag = "  [$taskIdx]".PadRight(8)
             $box = switch ($item.Marker) {
-                'x' { "[x]" }
-                'X' { "[x]" }
-                '>' { "[>]" }
-                '-' { "[-]" }
-                '~' { "[-]" }
+                'x' { "[x]"; break }
+                'X' { "[x]"; break }
+                '>' { "[>]"; break }
+                '-' { "[-]"; break }
+                '~' { "[-]"; break }
                 default { "[ ]" }
             }
             $boxColor = switch ($item.Marker) {
-                'x' { "Green" }
-                'X' { "Green" }
-                '>' { "Magenta" }
-                '-' { "DarkYellow" }
-                '~' { "DarkYellow" }
+                'x' { "Green"; break }
+                'X' { "Green"; break }
+                '>' { "Magenta"; break }
+                '-' { "DarkYellow"; break }
+                '~' { "DarkYellow"; break }
                 default { "Cyan" }
             }
             $textColor = if ($item.Done -or $item.Moved -or $item.Skipped) { "DarkGray" } else { "White" }
@@ -1341,7 +1514,11 @@ function note-roll {
         [int]$DaysAgo = 0,
 
         [Parameter()]
-        [switch]$KeepUnmarked   # No marcar como migrado [>] en la nota previa
+        [switch]$KeepUnmarked,  # No marcar como migrado [>] en la nota previa
+
+        [Parameter()]
+        [Alias('WithNotes')]
+        [switch]$IncludeNotes   # Copiar también los apuntes secundarios identados a la nueva nota
     )
 
     $notesDir = $global:NotesDir
@@ -1370,11 +1547,19 @@ function note-roll {
     $taskRegex = '^\s*[-*]\s*\[ \]\s*(.*)$'
     $pendingTasks = @()
     $pendingIndices = @()
+    $pendingSubNotes = @()
 
     for ($i = 0; $i -lt $prevLines.Count; $i++) {
         if ($prevLines[$i] -match $taskRegex) {
             $pendingTasks += $matches[1].Trim()
             $pendingIndices += $i
+            $sub = @()
+            $j = $i + 1
+            while ($j -lt $prevLines.Count -and ($prevLines[$j] -match '^\s{2,}\S' -or $prevLines[$j] -match '^\t+\S')) {
+                $sub += $prevLines[$j]
+                $j++
+            }
+            $pendingSubNotes += ,$sub
         }
     }
 
@@ -1410,6 +1595,11 @@ function note-roll {
         }
         if (-not ($todayContent.Contains($baseTask))) {
             $toAdd += "- [ ] [> $prevStr]($prevStr.md) $baseTask"
+            if ($IncludeNotes -and $pendingSubNotes[$k] -and $pendingSubNotes[$k].Count -gt 0) {
+                foreach ($snLine in $pendingSubNotes[$k]) {
+                    $toAdd += $snLine
+                }
+            }
         }
         $indicesMigrated += $pendingIndices[$k]
     }
