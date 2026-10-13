@@ -495,12 +495,13 @@ function task-stop {
     $endTime = Get-Date
     $elapsedMinutes = [math]::Round(($endTime - $startTime).TotalMinutes)
 
-    # Si fue menos de 1 minuto, computar al menos 0.05h o 1 minuto
+    # Si fue menos de 1 minuto, computar al menos 1 minuto
     if ($elapsedMinutes -lt 1) { $elapsedMinutes = 1 }
 
-    # Calcular horas decimales (redondeado a 2 decimales, ej. 1.25h)
-    $hours = [math]::Round($elapsedMinutes / 60, 2)
-    if ($hours -lt 0.05) { $hours = 0.05 }
+    # Redondear hacia arriba de 0.25 en 0.25 (mínimo 0.25h / 15 min)
+    $quarters = [math]::Ceiling($elapsedMinutes / 15.0)
+    if ($quarters -lt 1) { $quarters = 1 }
+    $hours = [math]::Round($quarters * 0.25, 2)
 
     $startStr = $startTime.ToString('HH:mm')
     $endStr   = $endTime.ToString('HH:mm')
@@ -515,7 +516,7 @@ function task-stop {
 
     if (-not $finalComment -and -not $NoPrompt) {
         Write-Host "`n⏱ Tarea: $($timer.TaskText)" -ForegroundColor Cyan
-        Write-Host "  Tiempo transcurrido: $elapsedMinutes min (${hours}h) [$startStr - $endStr]" -ForegroundColor Yellow
+        Write-Host "  Tiempo transcurrido: $elapsedMinutes min -> ${hours}h [$startStr - $endStr]" -ForegroundColor Yellow
         $userComment = Read-Host "  Comentario / descripción del trabajo (opcional)"
         if ($userComment) {
             $finalComment = $userComment.Trim()
@@ -545,7 +546,7 @@ function task-stop {
     # Eliminar archivo de estado
     Remove-Item -LiteralPath $global:ActiveTimerFile -Force -ErrorAction SilentlyContinue
 
-    Write-Host "`n✓ Cronómetro DETENIDO: ${hours}h ($elapsedMinutes min) registradas en $($timer.FileName):" -ForegroundColor Green
+    Write-Host "`n✓ Cronómetro DETENIDO: ${hours}h ($elapsedMinutes min transcurridos) registradas en $($timer.FileName):" -ForegroundColor Green
     Write-Host "  $($timer.TaskText)" -ForegroundColor DarkGray
     Write-Host "      ↳ $noteText`n" -ForegroundColor White
 }
@@ -570,6 +571,8 @@ function task-status {
     $elapsed = (Get-Date) - $startTime
     $mins = [math]::Floor($elapsed.TotalMinutes)
     $secs = $elapsed.Seconds
+    $quarters = [math]::Ceiling([math]::Max(1, $mins) / 15.0)
+    $approxHours = [math]::Round($quarters * 0.25, 2)
 
     Write-Host "`n┌─ Cronómetro Activo ──────────────────────────────────────┐" -ForegroundColor Cyan
     Write-Host "  Tarea:      " -NoNewline -ForegroundColor DarkGray
@@ -577,7 +580,7 @@ function task-status {
     Write-Host "  Inicio:     " -NoNewline -ForegroundColor DarkGray
     Write-Host "$($startTime.ToString('HH:mm:ss'))" -ForegroundColor White
     Write-Host "  Tiempo:     " -NoNewline -ForegroundColor DarkGray
-    Write-Host "$mins min $secs seg" -ForegroundColor Green
+    Write-Host "$mins min $secs seg (~${approxHours}h)" -ForegroundColor Green
     Write-Host "└──────────────────────────────────────────────────────────┘`n" -ForegroundColor Cyan
 }
 Set-Alias tstatus task-status
