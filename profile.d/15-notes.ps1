@@ -522,6 +522,9 @@ function todo {
         todo                                # Lista tareas pendientes de los últimos 7 días
         todo "Revisar stock en pre"         # Añade una nueva tarea a la nota de hoy
         todo -Note 6 "Dedicadas 3h a test"  # Añade apunte identado a la tarea 6
+        todo -Wizard                        # Asistente guiado para revisar/triar tareas pendientes una a una
+        todo -Wizard -Today                 # Asistente guiado solo para las tareas de hoy
+        todo-wizard                         # Alias directo del asistente
         todo -Note 6                        # Pide el apunte de forma interactiva
         todo -Today                         # Solo tareas de hoy
         todo -Done                          # Muestra también completadas (- [x])
@@ -538,9 +541,11 @@ function todo {
         [string]$Task,
 
         [Parameter(ParameterSetName = 'List')]
+        [Parameter(ParameterSetName = 'Wizard')]
         [int]$Days = 7,
 
         [Parameter(ParameterSetName = 'List')]
+        [Parameter(ParameterSetName = 'Wizard')]
         [switch]$Today,
 
         [Parameter(ParameterSetName = 'List')]
@@ -548,6 +553,10 @@ function todo {
 
         [Parameter(ParameterSetName = 'List')]
         [switch]$All,
+
+        [Parameter(ParameterSetName = 'Wizard')]
+        [Alias('Review', 'Triage')]
+        [switch]$Wizard,
 
         [Parameter(ParameterSetName = 'Open')]
         [int]$Open,
@@ -794,6 +803,136 @@ function todo {
         }
     }
 
+    # Caso 10b: Asistente guiado de revisión (-Wizard / -Review / -Triage)
+    if ($Wizard) {
+        $pendingTasks = @($tasks | Where-Object { -not $_.Done -and -not $_.Moved -and -not $_.Skipped })
+        if ($pendingTasks.Count -eq 0) {
+            Write-Host "`n✓ No hay tareas pendientes que revisar en el rango seleccionado. ¡Todo al día!`n" -ForegroundColor Green
+            return
+        }
+
+        Write-Host "`n=== Asistente de Revisión de Tareas ($($pendingTasks.Count) pendientes) ===`n" -ForegroundColor DarkCyan
+        Write-Host "Teclas rápidas: [c] Hecha [x] | [o] Omitir [-] | [s/Enter] Saltar | [n] Apunte | [e] Neovim | [q] Salir`n" -ForegroundColor DarkGray
+
+        $countDone = 0
+        $countSkipped = 0
+        $countNoChange = 0
+        $stepIdx = 1
+
+        foreach ($t in $pendingTasks) {
+            $fileLines = [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
+            $targetIdx = -1
+            $origIdx = $t.LineNumber - 1
+
+            if ($origIdx -ge 0 -and $origIdx -lt $fileLines.Count -and $fileLines[$origIdx].Contains($t.Text)) {
+                $targetIdx = $origIdx
+            } else {
+                for ($k = 0; $k -lt $fileLines.Count; $k++) {
+                    if ($fileLines[$k] -match '^\s*[-*]\s*\[([ xX>~-])\]' -and $fileLines[$k].Contains($t.Text)) {
+                        $targetIdx = $k
+                        break
+                    }
+                }
+            }
+
+            $currentLine = if ($targetIdx -ge 0) { $fileLines[$targetIdx] } else { $t.RawLine }
+
+            Write-Host "──────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+            Write-Host "  [$stepIdx/$($pendingTasks.Count)] " -NoNewline -ForegroundColor Cyan
+            Write-Host "$($t.FileName) " -NoNewline -ForegroundColor Yellow
+            $lineDisplay = if ($targetIdx -ge 0) { $targetIdx + 1 } else { $t.LineNumber }
+            Write-Host "(Línea $lineDisplay)" -ForegroundColor DarkGray
+
+            Write-Host "  $currentLine" -ForegroundColor White
+
+            if ($t.SubNotes -and $t.SubNotes.Count -gt 0) {
+                foreach ($sn in $t.SubNotes) {
+                    Write-Host "      ↳ $sn" -ForegroundColor DarkGray
+                }
+            }
+
+            Write-Host "`n  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | e: Neovim | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+
+            $loop = $true
+            while ($loop) {
+                $key = [Console]::ReadKey($true)
+                if ($key.Key -eq 'Enter' -or $key.KeyChar -eq 's' -or $key.KeyChar -eq 'S' -or $key.Key -eq 'Spacebar') {
+                    Write-Host "Saltar (sin cambios)" -ForegroundColor DarkGray
+                    $countNoChange++
+                    $loop = $false
+                }
+                elseif ($key.KeyChar -eq 'c' -or $key.KeyChar -eq 'C' -or $key.KeyChar -eq 'x' -or $key.KeyChar -eq 'X') {
+                    if ($targetIdx -ge 0 -and $fileLines[$targetIdx] -match '^\s*[-*]\s*\[([ xX>~-])\]') {
+                        $fileLines[$targetIdx] = $fileLines[$targetIdx] -replace '^\s*[-*]\s*\[([ xX>~-])\]', '- [x]'
+                        $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+                        $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+                        [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+                    }
+                    Write-Host "✓ COMPLETADA [x]" -ForegroundColor Green
+                    $countDone++
+                    $loop = $false
+                }
+                elseif ($key.KeyChar -eq 'o' -or $key.KeyChar -eq 'O' -or $key.KeyChar -eq '-') {
+                    if ($targetIdx -ge 0 -and $fileLines[$targetIdx] -match '^\s*[-*]\s*\[([ xX>~-])\]') {
+                        $fileLines[$targetIdx] = $fileLines[$targetIdx] -replace '^\s*[-*]\s*\[([ xX>~-])\]', '- [-]'
+                        $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+                        $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+                        [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+                    }
+                    Write-Host "✓ OMITIDA [-]" -ForegroundColor DarkYellow
+                    $countSkipped++
+                    $loop = $false
+                }
+                elseif ($key.KeyChar -eq 'n' -or $key.KeyChar -eq 'N') {
+                    Write-Host "Apunte" -ForegroundColor Cyan
+                    $noteInput = Read-Host "    Texto del apunte"
+                    if (-not [string]::IsNullOrWhiteSpace($noteInput)) {
+                        $timeStr = Get-Date -Format 'HH:mm'
+                        $cleanNote = $noteInput.Trim()
+                        $formattedNote = if ($cleanNote -match '^\s*\[\d{2}:\d{2}\]') { $cleanNote } else { "[$timeStr] $cleanNote" }
+                        $indentedLine = "    $formattedNote"
+
+                        $fileLinesList = [System.Collections.Generic.List[string]]::new(
+                            [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
+                        )
+                        $insertAt = if ($targetIdx -ge 0) { $targetIdx + 1 } else { $fileLinesList.Count }
+                        while ($insertAt -lt $fileLinesList.Count -and ($fileLinesList[$insertAt] -match '^\s{2,}\S' -or $fileLinesList[$insertAt] -match '^\t+\S')) {
+                            $insertAt++
+                        }
+                        $fileLinesList.Insert($insertAt, $indentedLine)
+                        $crlfContent = ($fileLinesList -join "`r`n") + "`r`n"
+                        $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+                        [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+                        Write-Host "    ✓ Apunte añadido." -ForegroundColor Green
+                    }
+                    Write-Host "  ¿Estado ahora? [c: Hecha | o: Omitir | s/Enter: Saltar | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+                }
+                elseif ($key.KeyChar -eq 'e' -or $key.KeyChar -eq 'E') {
+                    Write-Host "Editar en Neovim" -ForegroundColor Cyan
+                    $lineNum = if ($targetIdx -ge 0) { $targetIdx + 1 } else { $t.LineNumber }
+                    nvim "+$lineNum" "$($t.File)"
+                    Write-Host "  (Retornado de Neovim) ¿Estado? [c: Hecha | o: Omitir | s/Enter: Siguiente | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+                }
+                elseif ($key.KeyChar -eq 'q' -or $key.KeyChar -eq 'Q' -or $key.Key -eq 'Escape') {
+                    Write-Host "Salir" -ForegroundColor Yellow
+                    Write-Host "`n● Asistente finalizado por el usuario." -ForegroundColor Yellow
+                    break
+                }
+            }
+
+            if ($key.KeyChar -eq 'q' -or $key.KeyChar -eq 'Q' -or $key.Key -eq 'Escape') {
+                break
+            }
+            $stepIdx++
+        }
+
+        Write-Host "`n=== Resumen de Revisión ===" -ForegroundColor DarkCyan
+        Write-Host "  ✓ Completadas:   $countDone" -ForegroundColor Green
+        Write-Host "  - Omitidas:      $countSkipped" -ForegroundColor DarkYellow
+        Write-Host "  ○ Sin cambios:   $countNoChange`n" -ForegroundColor DarkGray
+        return
+    }
+
     # Caso 11: Listar tareas en pantalla
     if ($tasks.Count -eq 0) {
         Write-Host "`n✓ No hay tareas pendientes en las notas recientes. ¡Todo al día!`n" -ForegroundColor Green
@@ -897,10 +1036,32 @@ function todo {
         Write-Host ", $skippedCount omitida(s)" -NoNewline -ForegroundColor DarkYellow
     }
     Write-Host "."
-    Write-Host "Tip: Usa 'todo -Start <n>' para cronometrar, 'todo -Log <n> <h>' para imputar o 'hours' para balance.`n" -ForegroundColor DarkGray
+    Write-Host "Tip: 'todo -Wizard' (o 'todo-wizard') para revisar tareas | 'todo -Start <n>' cronometrar | 'hours' balance.`n" -ForegroundColor DarkGray
 }
 Set-Alias todos todo
 Set-Alias tasks todo
+
+function todo-wizard {
+    <#
+    .SYNOPSIS
+        Asistente interactivo guiado para revisar, completar u omitir tareas pendientes una a una.
+    .EXAMPLE
+        todo-wizard
+        todo-wizard -Today
+        todo-wizard 14
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [int]$Days = 7,
+
+        [switch]$Today
+    )
+    todo -Wizard -Days $Days -Today:$Today
+}
+Set-Alias todo-review todo-wizard
+Set-Alias todo-triage todo-wizard
+Set-Alias todos-wizard todo-wizard
 
 # ------------------------------------------------------------------------------
 # 8. ROLLOVER DE TAREAS: note-roll (alias: note-rollover, roll-todos)
