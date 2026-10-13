@@ -491,6 +491,12 @@ function Get-NoteTasks {
                     $j++
                 }
 
+                # Detectar prioridad explícita [P0]..[P9]
+                $pri = $null
+                if ($desc -match '\[(P[0-9])\]') {
+                    $pri = $matches[1].ToUpper()
+                }
+
                 if ($IncludeDone -or (-not $isDone -and -not $isMoved -and -not $isSkipped)) {
                     $results += [PSCustomObject]@{
                         File           = $file.FullName
@@ -502,6 +508,7 @@ function Get-NoteTasks {
                         Moved          = $isMoved
                         Skipped        = $isSkipped
                         Marker         = $marker
+                        Priority       = $pri
                         Text           = $desc
                         SubNotes       = $subNotes
                         RawLine        = $line
@@ -532,6 +539,9 @@ function todo {
         todo -Days 14                       # Revisa notas de los últimos 14 días
         todo -Open 2                        # Abre Neovim en la línea exacta de la tarea 2
         todo -Origin 2                      # Abre Neovim en la nota de origen de la tarea migrada 2
+        todo -P1                            # Filtra solo las tareas de prioridad P1
+        todo -Pri 2 1                       # Asigna prioridad [P1] a la tarea 2 (0 para quitar)
+        todo -Sort                          # Lista tareas ordenadas por prioridad (P1 -> P2 -> P3)
         todo -Check 2                       # Marca la tarea 2 como hecha (- [x])
         todo -Skip 2                        # Marca la tarea 2 como omitida/descartada (- [-])
         todo -Uncheck 2                     # Desmarca la tarea 2 como pendiente (- [ ])
@@ -554,6 +564,26 @@ function todo {
 
         [Parameter(ParameterSetName = 'List')]
         [switch]$All,
+
+        [Parameter(ParameterSetName = 'List')]
+        [switch]$P1,
+
+        [Parameter(ParameterSetName = 'List')]
+        [switch]$P2,
+
+        [Parameter(ParameterSetName = 'List')]
+        [switch]$P3,
+
+        [Parameter(ParameterSetName = 'List')]
+        [Alias('Top')]
+        [switch]$Sort,
+
+        [Parameter(ParameterSetName = 'SetPriority', Mandatory = $true, Position = 0)]
+        [Alias('Priority')]
+        [int]$Pri,
+
+        [Parameter(ParameterSetName = 'SetPriority', Position = 1)]
+        [string]$Level,
 
         [Parameter(ParameterSetName = 'Wizard')]
         [Alias('Review', 'Triage')]
@@ -627,6 +657,85 @@ function todo {
     $includeCompleted = ($Done -or $All -or $Uncheck)
     $scannedDays = if ($PSBoundParameters.ContainsKey('Days')) { $Days } elseif ($All) { 0 } else { $Days }
     $tasks = @(Get-NoteTasks -Days $scannedDays -IncludeDone:$includeCompleted -TodayOnly:$Today)
+
+    # Caso 1b: Asignar o cambiar prioridad (-Pri / -Priority)
+    if ($PSCmdlet.ParameterSetName -eq 'SetPriority' -and $Pri) {
+        if ($Pri -ge 1 -and $Pri -le $tasks.Count) {
+            $t = $tasks[$Pri - 1]
+            if ([string]::IsNullOrWhiteSpace($Level)) {
+                Write-Host "`n● Asignar prioridad a tarea [$Pri] en $($t.FileName):" -ForegroundColor Cyan
+                Write-Host "  $($t.Text)" -ForegroundColor White
+                $Level = Read-Host "  Nivel de prioridad [1=P1 (Urgente), 2=P2 (Media), 3=P3 (Normal), 0=Quitar]"
+            }
+
+            $normLevel = switch -Regex ($Level.Trim()) {
+                '^(1|P1)$' { 'P1' }
+                '^(2|P2)$' { 'P2' }
+                '^(3|P3)$' { 'P3' }
+                '^(0|none|quitar|clear)$' { 'NONE' }
+                default { $null }
+            }
+
+            if (-not $normLevel) {
+                Write-Host "ℹ Valor no reconocido. Usa 1, 2, 3 o 0." -ForegroundColor Yellow
+                return
+            }
+
+            $fileLines = [System.IO.File]::ReadAllLines($t.File, [System.Text.Encoding]::UTF8)
+            $idx = $t.LineNumber - 1
+
+            if ($idx -ge 0 -and $idx -lt $fileLines.Count -and $fileLines[$idx] -match '^\s*[-*]\s*\[([ xX>~-])\]') {
+                $curLine = $fileLines[$idx]
+                $lineNoPri = $curLine -replace '(?<=^\s*[-*]\s*\[[ xX>~-]\s*\]\s*)\[P[0-9]\]\s*', ''
+
+                if ($normLevel -eq 'NONE') {
+                    $fileLines[$idx] = $lineNoPri
+                    $msg = "✓ Prioridad retirada de tarea [$Pri] en $($t.FileName)."
+                    $col = "DarkYellow"
+                } else {
+                    $fileLines[$idx] = $lineNoPri -replace '^(^\s*[-*]\s*\[[ xX>~-]\s*\]\s*)', "`$1[$normLevel] "
+                    $msg = "✓ Prioridad [$normLevel] asignada a tarea [$Pri] en $($t.FileName):"
+                    $col = if ($normLevel -eq 'P1') { 'Red' } elseif ($normLevel -eq 'P2') { 'Yellow' } else { 'Cyan' }
+                }
+
+                $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+                $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+                [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+
+                Write-Host $msg -ForegroundColor $col
+                Write-Host "  $($fileLines[$idx].Trim())`n" -ForegroundColor White
+            } else {
+                Write-Host "ℹ No se pudo localizar la línea de la tarea en $($t.FileName)." -ForegroundColor Yellow
+            }
+            return
+        } else {
+            Write-Error "Índice $Pri fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Filtro por prioridad
+    if ($P1) {
+        $tasks = @($tasks | Where-Object { $_.Priority -eq 'P1' })
+    } elseif ($P2) {
+        $tasks = @($tasks | Where-Object { $_.Priority -eq 'P2' })
+    } elseif ($P3) {
+        $tasks = @($tasks | Where-Object { $_.Priority -eq 'P3' })
+    }
+
+    # Ordenación por prioridad (-Sort / -Top)
+    if ($Sort) {
+        $tasks = @($tasks | Sort-Object @{
+            Expression = {
+                switch ($_.Priority) {
+                    'P1' { 1 }
+                    'P2' { 2 }
+                    'P3' { 3 }
+                    default { 4 }
+                }
+            }
+        }, @{ Expression = "BaseName"; Descending = $true }, "LineNumber")
+    }
 
     # Caso 2: Abrir en Neovim
     if ($Open) {
@@ -936,7 +1045,7 @@ function todo {
                 }
             }
 
-            Write-Host "`n  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | e: Neovim | g: Origen | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+            Write-Host "`n  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | p: Prioridad | e: Neovim | g: Origen | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
 
             $loop = $true
             while ($loop) {
@@ -992,6 +1101,37 @@ function todo {
                     }
                     Write-Host "  ¿Estado ahora? [c: Hecha | o: Omitir | s/Enter: Saltar | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
                 }
+                elseif ($key.KeyChar -eq 'p' -or $key.KeyChar -eq 'P') {
+                    Write-Host "Prioridad" -ForegroundColor Cyan
+                    $pInput = Read-Host "    Nivel de prioridad [1=P1, 2=P2, 3=P3, 0=Quitar]"
+                    $normLevel = switch -Regex ($pInput.Trim()) {
+                        '^(1|P1)$' { 'P1' }
+                        '^(2|P2)$' { 'P2' }
+                        '^(3|P3)$' { 'P3' }
+                        '^(0|none|clear|quitar)$' { 'NONE' }
+                        default { $null }
+                    }
+                    if ($normLevel) {
+                        $targetIdx = if ($targetIdx -ge 0) { $targetIdx } else { $t.LineNumber - 1 }
+                        if ($targetIdx -ge 0 -and $targetIdx -lt $fileLines.Count) {
+                            $curLine = $fileLines[$targetIdx]
+                            $lineNoPri = $curLine -replace '(?<=^\s*[-*]\s*\[[ xX>~-]\s*\]\s*)\[P[0-9]\]\s*', ''
+                            if ($normLevel -eq 'NONE') {
+                                $fileLines[$targetIdx] = $lineNoPri
+                                Write-Host "    ✓ Prioridad retirada." -ForegroundColor DarkYellow
+                            } else {
+                                $fileLines[$targetIdx] = $lineNoPri -replace '^(^\s*[-*]\s*\[[ xX>~-]\s*\]\s*)', "`$1[$normLevel] "
+                                Write-Host "    ✓ Prioridad [$normLevel] asignada." -ForegroundColor Green
+                            }
+                            $crlfContent = ($fileLines -join "`r`n") + "`r`n"
+                            $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+                            [System.IO.File]::WriteAllText($t.File, $crlfContent, $utf8Bom)
+                        }
+                    } else {
+                        Write-Host "    ℹ Opción no válida." -ForegroundColor Yellow
+                    }
+                    Write-Host "  ¿Estado ahora? [c: Hecha | o: Omitir | s/Enter: Siguiente | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+                }
                 elseif ($key.KeyChar -eq 'e' -or $key.KeyChar -eq 'E') {
                     Write-Host "Editar en Neovim" -ForegroundColor Cyan
                     $lineNum = if ($targetIdx -ge 0) { $targetIdx + 1 } else { $t.LineNumber }
@@ -1045,14 +1185,16 @@ function todo {
         return
     }
 
+    $priFilterLabel = if ($P1) { " - Prioridad P1" } elseif ($P2) { " - Prioridad P2" } elseif ($P3) { " - Prioridad P3" } else { "" }
+    $sortLabel = if ($Sort) { " - Ordenado por Prioridad" } else { "" }
     $titleFilter = if ($Today) {
-        if ($All) { "Hoy - Todos los estados" } else { "Hoy" }
+        if ($All) { "Hoy - Todos los estados$priFilterLabel$sortLabel" } else { "Hoy$priFilterLabel$sortLabel" }
     } elseif ($PSBoundParameters.ContainsKey('Days')) {
-        if ($All) { "Últimos $Days días - Todos los estados" } else { "Últimos $Days días" }
+        if ($All) { "Últimos $Days días - Todos los estados$priFilterLabel$sortLabel" } else { "Últimos $Days días$priFilterLabel$sortLabel" }
     } elseif ($All) {
-        "Historial completo"
+        "Historial completo$priFilterLabel$sortLabel"
     } else {
-        "Últimos $Days días"
+        "Últimos $Days días$priFilterLabel$sortLabel"
     }
     Write-Host "`n=== Tareas en Notas ($titleFilter) ===`n" -ForegroundColor DarkCyan
 
@@ -1101,7 +1243,19 @@ function todo {
 
             Write-Host $numTag -ForegroundColor DarkGray -NoNewline
             Write-Host "$box " -ForegroundColor $boxColor -NoNewline
-            Write-Host "$($item.Text)" -ForegroundColor $textColor -NoNewline
+            if ($item.Priority) {
+                $priColor = switch ($item.Priority) {
+                    'P1' { 'Red' }
+                    'P2' { 'Yellow' }
+                    'P3' { 'Cyan' }
+                    default { 'DarkCyan' }
+                }
+                Write-Host "[$($item.Priority)] " -ForegroundColor $priColor -NoNewline
+                $dispText = $item.Text -replace '^\s*\[P[0-9]\]\s*', ''
+                Write-Host "$dispText" -ForegroundColor $textColor -NoNewline
+            } else {
+                Write-Host "$($item.Text)" -ForegroundColor $textColor -NoNewline
+            }
 
             # Indicador de cronómetro activo
             if ($activeTimer -and $activeTimer.TaskText -eq $item.Text) {
@@ -1142,7 +1296,7 @@ function todo {
         Write-Host ", $skippedCount omitida(s)" -NoNewline -ForegroundColor DarkYellow
     }
     Write-Host "."
-    Write-Host "Tip: 'todo -Wizard' (o 'todo-wizard') para revisar tareas | 'todo -Start <n>' cronometrar | 'hours' balance.`n" -ForegroundColor DarkGray
+    Write-Host "Tip: 'todo -P1' filtrar P1 | 'todo -Pri <n> <1|2|3>' prioridad | 'todo -Sort' ordenar.`n" -ForegroundColor DarkGray
 }
 Set-Alias todos todo
 Set-Alias tasks todo
