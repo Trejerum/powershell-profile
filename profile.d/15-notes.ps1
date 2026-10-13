@@ -531,6 +531,7 @@ function todo {
         todo -All                           # Muestra todas (completadas, migradas [>] y omitidas [-])
         todo -Days 14                       # Revisa notas de los últimos 14 días
         todo -Open 2                        # Abre Neovim en la línea exacta de la tarea 2
+        todo -Origin 2                      # Abre Neovim en la nota de origen de la tarea migrada 2
         todo -Check 2                       # Marca la tarea 2 como hecha (- [x])
         todo -Skip 2                        # Marca la tarea 2 como omitida/descartada (- [-])
         todo -Uncheck 2                     # Desmarca la tarea 2 como pendiente (- [ ])
@@ -560,6 +561,9 @@ function todo {
 
         [Parameter(ParameterSetName = 'Open')]
         [int]$Open,
+
+        [Parameter(ParameterSetName = 'Origin')]
+        [int]$Origin,
 
         [Parameter(ParameterSetName = 'Check')]
         [int]$Check,
@@ -633,6 +637,58 @@ function todo {
             return
         } else {
             Write-Error "Índice $Open fuera de rango (hay $($tasks.Count) tareas listadas)."
+            return
+        }
+    }
+
+    # Caso 2b: Abrir tarea origen en Neovim (-Origin)
+    if ($Origin) {
+        if ($Origin -ge 1 -and $Origin -le $tasks.Count) {
+            $t = $tasks[$Origin - 1]
+            $origFileName = $null
+
+            # Extraer archivo origen de enlace markdown (...*.md), etiqueta [> YYYYMMDD] o [[YYYYMMDD]]
+            if ($t.RawLine -match '\(\s*([a-zA-Z0-9_\-]+\.md)\s*\)') {
+                $origFileName = $matches[1]
+            } elseif ($t.RawLine -match '\[>\s*([0-9]{8})\b') {
+                $origFileName = "$($matches[1]).md"
+            } elseif ($t.RawLine -match '\[\[([0-9]{8})\]\]') {
+                $origFileName = "$($matches[1]).md"
+            }
+
+            if (-not $origFileName) {
+                Write-Host "ℹ La tarea [$Origin] no contiene ninguna referencia de origen ([> YYYYMMDD](...))." -ForegroundColor Yellow
+                Write-Host "  Abriendo $($t.FileName) en línea $($t.LineNumber)..." -ForegroundColor Cyan
+                nvim "+$($t.LineNumber)" "$($t.File)"
+                return
+            }
+
+            $origFile = Join-Path $notesDir $origFileName
+            if (-not (Test-Path -LiteralPath $origFile)) {
+                Write-Host "ℹ El archivo de notas de origen '$origFileName' no existe." -ForegroundColor Yellow
+                nvim "+$($t.LineNumber)" "$($t.File)"
+                return
+            }
+
+            # Extraer texto base
+            $baseTask = $t.Text -replace '^\s*\[>[^\]]+\](\([^\)]+\))?\s*', '' -replace '^\s*\[>\s*\d{8}\]\s*', ''
+            $baseTask = $baseTask.Trim()
+
+            # Buscar línea de la tarea en el archivo origen
+            $origLines = [System.IO.File]::ReadAllLines($origFile, [System.Text.Encoding]::UTF8)
+            $origLineNum = 1
+            for ($k = 0; $k -lt $origLines.Count; $k++) {
+                if ($origLines[$k].Contains($baseTask)) {
+                    $origLineNum = $k + 1
+                    break
+                }
+            }
+
+            Write-Host "● Abriendo tarea de origen en $origFileName (línea $origLineNum)..." -ForegroundColor Cyan
+            nvim "+$origLineNum" "$origFile"
+            return
+        } else {
+            Write-Error "Índice $Origin fuera de rango (hay $($tasks.Count) tareas listadas)."
             return
         }
     }
@@ -851,7 +907,36 @@ function todo {
                 }
             }
 
-            Write-Host "`n  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | e: Neovim | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+            # Si la tarea procede de un traspaso, buscar y mostrar apuntes del origen
+            $origFileName = $null
+            if ($currentLine -match '\(\s*([a-zA-Z0-9_\-]+\.md)\s*\)') {
+                $origFileName = $matches[1]
+            } elseif ($currentLine -match '\[>\s*([0-9]{8})\b') {
+                $origFileName = "$($matches[1]).md"
+            } elseif ($currentLine -match '\[\[([0-9]{8})\]\]') {
+                $origFileName = "$($matches[1]).md"
+            }
+
+            if ($origFileName) {
+                $origPath = Join-Path $notesDir $origFileName
+                if (Test-Path -LiteralPath $origPath) {
+                    $origLines = [System.IO.File]::ReadAllLines($origPath, [System.Text.Encoding]::UTF8)
+                    $baseTask = $t.Text -replace '^\s*\[>[^\]]+\](\([^\)]+\))?\s*', '' -replace '^\s*\[>\s*\d{8}\]\s*', ''
+                    $baseTask = $baseTask.Trim()
+                    for ($k = 0; $k -lt $origLines.Count; $k++) {
+                        if ($origLines[$k].Contains($baseTask)) {
+                            $m = $k + 1
+                            while ($m -lt $origLines.Count -and ($origLines[$m] -match '^\s{2,}\S' -or $origLines[$m] -match '^\t+\S')) {
+                                Write-Host "      ↳ [Origen $origFileName]: $($origLines[$m].Trim())" -ForegroundColor DarkGray
+                                $m++
+                            }
+                            break
+                        }
+                    }
+                }
+            }
+
+            Write-Host "`n  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | e: Neovim | g: Origen | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
 
             $loop = $true
             while ($loop) {
@@ -912,6 +997,27 @@ function todo {
                     $lineNum = if ($targetIdx -ge 0) { $targetIdx + 1 } else { $t.LineNumber }
                     nvim "+$lineNum" "$($t.File)"
                     Write-Host "  (Retornado de Neovim) ¿Estado? [c: Hecha | o: Omitir | s/Enter: Siguiente | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+                }
+                elseif ($key.KeyChar -eq 'g' -or $key.KeyChar -eq 'G') {
+                    if ($origFileName -and (Test-Path -LiteralPath (Join-Path $notesDir $origFileName))) {
+                        $origPath = Join-Path $notesDir $origFileName
+                        $origLines = [System.IO.File]::ReadAllLines($origPath, [System.Text.Encoding]::UTF8)
+                        $baseTask = $t.Text -replace '^\s*\[>[^\]]+\](\([^\)]+\))?\s*', '' -replace '^\s*\[>\s*\d{8}\]\s*', ''
+                        $baseTask = $baseTask.Trim()
+                        $origLineNum = 1
+                        for ($k = 0; $k -lt $origLines.Count; $k++) {
+                            if ($origLines[$k].Contains($baseTask)) {
+                                $origLineNum = $k + 1
+                                break
+                            }
+                        }
+                        Write-Host "Origen ($origFileName, línea $origLineNum)" -ForegroundColor Cyan
+                        nvim "+$origLineNum" "$origPath"
+                        Write-Host "  (Retornado de Origen) ¿Estado? [c: Hecha | o: Omitir | s/Enter: Siguiente | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+                    } else {
+                        Write-Host "`n    ℹ Esta tarea no proviene de una nota previa." -ForegroundColor Yellow
+                        Write-Host "  ¿Estado? [c: Hecha | o: Omitir | s/Enter: Saltar | n: Apunte | e: Neovim | q: Salir]: " -NoNewline -ForegroundColor DarkCyan
+                    }
                 }
                 elseif ($key.KeyChar -eq 'q' -or $key.KeyChar -eq 'Q' -or $key.Key -eq 'Escape') {
                     Write-Host "Salir" -ForegroundColor Yellow
@@ -1141,9 +1247,15 @@ function note-roll {
     for ($k = 0; $k -lt $pendingTasks.Count; $k++) {
         $task = $pendingTasks[$k]
         # Extraer texto base si ya provenía de una migración previa
-        $baseTask = if ($task -match '^\s*\[>\s*\d{8}\]\s*(.*)$') { $matches[1] } else { $task }
+        $baseTask = if ($task -match '^\s*\[>[^\]]+\](\([^\)]+\))?\s*(.*)$') {
+            $matches[2].Trim()
+        } elseif ($task -match '^\s*\[>\s*\d{8}\]\s*(.*)$') {
+            $matches[1].Trim()
+        } else {
+            $task
+        }
         if (-not ($todayContent.Contains($baseTask))) {
-            $toAdd += "- [ ] [> $prevStr] $baseTask"
+            $toAdd += "- [ ] [> $prevStr]($prevStr.md) $baseTask"
         }
         $indicesMigrated += $pendingIndices[$k]
     }
