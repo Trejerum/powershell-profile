@@ -369,6 +369,21 @@ Set-Alias bluemine bm
 # ------------------------------------------------------------------------------
 # 4. CRONÓMETRO DE TAREAS: task-start, task-stop, task-status
 # ------------------------------------------------------------------------------
+function ConvertFrom-TimerDate {
+    param([string]$DateString)
+    if ([string]::IsNullOrWhiteSpace($DateString)) {
+        return (Get-Date)
+    }
+    $dt = [DateTime]::MinValue
+    if ([DateTime]::TryParse($DateString, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$dt)) {
+        return $dt
+    }
+    if ([DateTime]::TryParse($DateString, [ref]$dt)) {
+        return $dt
+    }
+    return (Get-Date)
+}
+
 function task-start {
     <#
     .SYNOPSIS
@@ -377,10 +392,11 @@ function task-start {
         task-start 1
         tstart 2
         todo -Start 1
+        tstart
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true, Position = 0)]
+        [Parameter(Position = 0)]
         [int]$Task,
 
         [Parameter(Position = 1)]
@@ -388,6 +404,27 @@ function task-start {
     )
 
     $tasks = @(Get-NoteTasks)
+    if ($tasks.Count -eq 0) {
+        Write-Host "✓ No hay tareas pendientes en las notas." -ForegroundColor Green
+        return
+    }
+
+    if ($Task -lt 1) {
+        Write-Host "`n=== Seleccionar Tarea para Iniciar Cronómetro ===`n" -ForegroundColor DarkCyan
+        $i = 1
+        foreach ($t in $tasks) {
+            Write-Host "  [$i] $($t.Text)" -ForegroundColor White
+            $i++
+        }
+        $sel = Read-Host "`nIntroduce el número de tarea"
+        if ($sel -as [int]) {
+            $Task = [int]$sel
+        } else {
+            Write-Host "ℹ Operación cancelada." -ForegroundColor Yellow
+            return
+        }
+    }
+
     if ($Task -lt 1 -or $Task -gt $tasks.Count) {
         Write-Error "Índice $Task fuera de rango (hay $($tasks.Count) tareas pendientes)."
         return
@@ -421,7 +458,7 @@ function task-start {
     $json = $timerState | ConvertTo-Json -Compress
     [System.IO.File]::WriteAllText($global:ActiveTimerFile, $json, [System.Text.Encoding]::UTF8)
 
-    $timeStr = (Get-Date).Format('HH:mm')
+    $timeStr = (Get-Date).ToString('HH:mm')
     Write-Host "`n⏱ Cronómetro INICIADO a las $timeStr para la tarea [$Task]:" -ForegroundColor Green
     Write-Host "  $($targetTask.Text)" -ForegroundColor White
     Write-Host "Tip: Usa 'task-stop' o 'todo -Stop' cuando finalices para registrar el tiempo exacto.`n" -ForegroundColor DarkGray
@@ -454,7 +491,7 @@ function task-stop {
     $json = [System.IO.File]::ReadAllText($global:ActiveTimerFile, [System.Text.Encoding]::UTF8)
     $timer = $json | ConvertFrom-Json
 
-    $startTime = [DateTime]::Parse($timer.StartTime)
+    $startTime = ConvertFrom-TimerDate -DateString $timer.StartTime
     $endTime = Get-Date
     $elapsedMinutes = [math]::Round(($endTime - $startTime).TotalMinutes)
 
@@ -529,7 +566,7 @@ function task-status {
 
     $json = [System.IO.File]::ReadAllText($global:ActiveTimerFile, [System.Text.Encoding]::UTF8)
     $timer = $json | ConvertFrom-Json
-    $startTime = [DateTime]::Parse($timer.StartTime)
+    $startTime = ConvertFrom-TimerDate -DateString $timer.StartTime
     $elapsed = (Get-Date) - $startTime
     $mins = [math]::Floor($elapsed.TotalMinutes)
     $secs = $elapsed.Seconds

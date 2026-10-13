@@ -769,7 +769,10 @@ function todo {
         [string]$Text,
 
         [Parameter(ParameterSetName = 'Start')]
-        [int]$Start,
+        [switch]$Start,
+
+        [Parameter(ParameterSetName = 'Start', Position = 0)]
+        [int]$StartTask,
 
         [Parameter(ParameterSetName = 'Stop')]
         [switch]$Stop,
@@ -1081,7 +1084,11 @@ function todo {
     # Caso 7: Cronómetro - Iniciar (-Start)
     if ($Start) {
         if (Get-Command task-start -ErrorAction SilentlyContinue) {
-            task-start -Task $Start
+            if ($StartTask -gt 0) {
+                task-start -Task $StartTask
+            } else {
+                task-start
+            }
         } else {
             Write-Error "El módulo de cronómetro no está cargado."
         }
